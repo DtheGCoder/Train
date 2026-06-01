@@ -851,3 +851,108 @@ export function coachWorkoutSummary(
 
   return { headline, notes: notes.slice(0, 3) };
 }
+
+/* ---------------- Bestenlisten-Score ---------------- */
+
+// Gewichtungen des Gesamt-Scores – bewusst einfach & transparent, damit jeder
+// Punkt nachvollziehbar ist (die Aufschlüsselung im UI zitiert genau diese
+// Regeln).
+export const SCORE_RULES = {
+  pointsPerWorkout: 10, // Konsistenz: je abgeschlossenem Workout
+  kgPerVolumePoint: 1000, // Volumen: 1 Punkt je 1.000 kg Gesamtvolumen
+  kgPer1RMPoint: 2, // Coach·Stärke: 1 Punkt je 2 kg bestem 1RM
+  progress: {
+    rising: 15, // Übung im Aufwärtstrend
+    fresh: 5, // neue Übung (erst eine Einheit)
+    flat: 5, // stabil gehalten
+    stalled: 2, // Plateau
+    regressing: 0, // Rückgang
+  },
+} as const;
+
+export type TrendCounts = {
+  rising: number;
+  fresh: number;
+  flat: number;
+  stalled: number;
+  regressing: number;
+};
+
+export type ScoreInput = {
+  workouts: number; // abgeschlossene Workouts
+  volume: number; // Gesamtvolumen in kg
+  best1rm: number; // stärkstes geschätztes 1RM in kg
+  trend: TrendCounts; // Übungs-Trends laut Coach-Verlaufsanalyse
+};
+
+// Eine Zeile der Punkte-Aufschlüsselung (serialisierbar fürs UI).
+export type ScoreLine = {
+  key: "consistency" | "volume" | "strength" | "progress";
+  label: string;
+  detail: string; // wie sich die Punkte errechnen
+  points: number;
+};
+
+export type ScoreResult = {
+  total: number;
+  lines: ScoreLine[];
+};
+
+function progressDetail(t: TrendCounts): string {
+  const parts: string[] = [];
+  if (t.rising) parts.push(`${t.rising}× Aufwärts`);
+  if (t.flat) parts.push(`${t.flat}× stabil`);
+  if (t.fresh) parts.push(`${t.fresh}× neu`);
+  if (t.stalled) parts.push(`${t.stalled}× Plateau`);
+  if (t.regressing) parts.push(`${t.regressing}× Rückgang`);
+  return parts.length ? parts.join(", ") : "Noch keine Verlaufsdaten";
+}
+
+// Verrechnet die Kennzahlen eines Accounts zu einem Gesamt-Score und liefert
+// die exakte Aufschlüsselung je Bestandteil (Konsistenz, Volumen, Coach·Stärke,
+// Coach·Fortschritt). Deterministisch und rein.
+export function computeScore(input: ScoreInput): ScoreResult {
+  const r = SCORE_RULES;
+  const consistency = input.workouts * r.pointsPerWorkout;
+  const volume = Math.round(input.volume / r.kgPerVolumePoint);
+  const strength = Math.round(input.best1rm / r.kgPer1RMPoint);
+  const t = input.trend;
+  const progress =
+    t.rising * r.progress.rising +
+    t.fresh * r.progress.fresh +
+    t.flat * r.progress.flat +
+    t.stalled * r.progress.stalled +
+    t.regressing * r.progress.regressing;
+
+  const lines: ScoreLine[] = [
+    {
+      key: "consistency",
+      label: "Konsistenz",
+      detail: `${input.workouts} Workouts × ${r.pointsPerWorkout}`,
+      points: consistency,
+    },
+    {
+      key: "volume",
+      label: "Volumen",
+      detail: `${Math.round(input.volume).toLocaleString("de-DE")} kg ÷ ${r.kgPerVolumePoint.toLocaleString("de-DE")}`,
+      points: volume,
+    },
+    {
+      key: "strength",
+      label: "Coach · Stärke",
+      detail:
+        input.best1rm > 0
+          ? `Bestes 1RM ${Math.round(input.best1rm)} kg ÷ ${r.kgPer1RMPoint}`
+          : "Noch kein 1RM erfasst",
+      points: strength,
+    },
+    {
+      key: "progress",
+      label: "Coach · Fortschritt",
+      detail: progressDetail(t),
+      points: progress,
+    },
+  ];
+
+  return { total: consistency + volume + strength + progress, lines };
+}
