@@ -1,26 +1,180 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0b;
+  --surface: #141417;
+  --surface-2: #1c1c21;
+  --border: #2a2a31;
+  --foreground: #ededed;
+  --muted: #8b8b94;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --success: #22c55e;
+  --danger: #ef4444;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
   --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  /* Verhindert Pull-to-Refresh/Bounce beim Scrollen im Workout */
+  overscroll-behavior-y: none;
+}
+
+/* Tap-Delay entfernen; Doppeltipp-Zoom auf Bedienelementen unterbinden */
+button,
+a,
+input,
+select,
+textarea,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* iOS zoomt bei Fokus auf Felder mit < 16px Schrift – auf Mobil erzwingen */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Numerische Eingaben ohne Spinner für sauberere Set-Logs */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ---------------- Login-Animationen ---------------- */
+
+@keyframes auroraDrift {
+  0% {
+    transform: translate3d(-10%, -8%, 0) scale(1.1) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(10%, 6%, 0) scale(1.25) rotate(8deg);
+  }
+  100% {
+    transform: translate3d(-10%, -8%, 0) scale(1.1) rotate(0deg);
+  }
+}
+
+@keyframes auroraDrift2 {
+  0% {
+    transform: translate3d(8%, 10%, 0) scale(1.2) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(-12%, -6%, 0) scale(1.05) rotate(-10deg);
+  }
+  100% {
+    transform: translate3d(8%, 10%, 0) scale(1.2) rotate(0deg);
+  }
+}
+
+@keyframes floatUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes logoPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 45%, transparent);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 14px transparent;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -150% 0;
+  }
+  100% {
+    background-position: 250% 0;
+  }
+}
+
+@keyframes shake {
+  10%,
+  90% {
+    transform: translateX(-1px);
+  }
+  20%,
+  80% {
+    transform: translateX(2px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-4px);
+  }
+  40%,
+  60% {
+    transform: translateX(4px);
+  }
+}
+
+.aurora-a {
+  animation: auroraDrift 18s ease-in-out infinite;
+}
+.aurora-b {
+  animation: auroraDrift2 22s ease-in-out infinite;
+}
+.login-rise {
+  animation: floatUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.logo-pulse {
+  animation: logoPulse 3.2s ease-in-out infinite;
+}
+.error-shake {
+  animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora-a,
+  .aurora-b,
+  .login-rise,
+  .logo-pulse,
+  .error-shake {
+    animation: none;
+  }
 }

@@ -1,0 +1,169 @@
+// Fitness-Tracker — Datenmodell
+// SQLite via Prisma. Enum-artige Felder werden als String gespeichert,
+// da SQLite keine nativen Enums kennt.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model MuscleGroup {
+  id         String     @id @default(cuid())
+  slug       String     @unique
+  nameDe     String
+  nameEn     String
+  bodyRegion String // z.B. "Oberkörper", "Unterkörper", "Rumpf"
+  exercises  Exercise[]
+}
+
+model Equipment {
+  id        String     @id @default(cuid())
+  slug      String     @unique
+  nameDe    String
+  nameEn    String
+  exercises Exercise[]
+}
+
+model Exercise {
+  id                String   @id @default(cuid())
+  nameDe            String
+  nameEn            String
+  primaryMuscle     MuscleGroup @relation(fields: [primaryMuscleId], references: [id])
+  primaryMuscleId   String
+  secondaryMuscles  String   @default("") // Komma-separierte Muskel-Slugs
+  equipment         Equipment? @relation(fields: [equipmentId], references: [id])
+  equipmentId       String?
+  category          String   @default("strength") // strength, cardio, stretching
+  mechanic          String   @default("isolation") // compound, isolation
+  forceType         String   @default("push") // push, pull, static
+  instructions      String   @default("")
+  isCustom          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  routineExercises  RoutineExercise[]
+  workoutExercises  WorkoutExercise[]
+  personalRecords   PersonalRecord[]
+
+  @@index([primaryMuscleId])
+}
+
+model Routine {
+  id          String            @id @default(cuid())
+  name        String
+  description String            @default("")
+  color       String            @default("#6366f1")
+  isPreset    Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  exercises   RoutineExercise[]
+  workouts    Workout[]
+}
+
+model RoutineExercise {
+  id            String   @id @default(cuid())
+  routine       Routine  @relation(fields: [routineId], references: [id], onDelete: Cascade)
+  routineId     String
+  exercise      Exercise @relation(fields: [exerciseId], references: [id])
+  exerciseId    String
+  position      Int      @default(0)
+  targetSets    Int      @default(3)
+  targetReps    Int      @default(10)
+  targetRestSec Int      @default(90)
+  notes         String   @default("")
+  supersetGroup Int? // Übungen mit gleicher Gruppe = Supersatz
+
+  @@index([routineId])
+}
+
+model Workout {
+  id          String            @id @default(cuid())
+  name        String            @default("Workout")
+  routine     Routine?          @relation(fields: [routineId], references: [id])
+  routineId   String?
+  startedAt   DateTime          @default(now())
+  finishedAt  DateTime?
+  notes       String            @default("")
+  totalVolume Float             @default(0)
+  exercises   WorkoutExercise[]
+
+  @@index([startedAt])
+}
+
+model WorkoutExercise {
+  id            String      @id @default(cuid())
+  workout       Workout     @relation(fields: [workoutId], references: [id], onDelete: Cascade)
+  workoutId     String
+  exercise      Exercise    @relation(fields: [exerciseId], references: [id])
+  exerciseId    String
+  position      Int         @default(0)
+  notes         String      @default("")
+  supersetGroup Int?
+  sets          WorkoutSet[]
+
+  @@index([workoutId])
+}
+
+model WorkoutSet {
+  id                String          @id @default(cuid())
+  workoutExercise   WorkoutExercise @relation(fields: [workoutExerciseId], references: [id], onDelete: Cascade)
+  workoutExerciseId String
+  setNumber         Int             @default(1)
+  weight            Float           @default(0)
+  reps              Int             @default(0)
+  rpe               Float? // 1-10, optional
+  setType           String          @default("normal") // warmup, normal, dropset, failure
+  isCompleted       Boolean         @default(false)
+  restSec           Int             @default(0)
+
+  @@index([workoutExerciseId])
+}
+
+model PersonalRecord {
+  id         String   @id @default(cuid())
+  exercise   Exercise @relation(fields: [exerciseId], references: [id])
+  exerciseId String
+  recordType String // "1rm", "volume", "maxReps", "maxWeight"
+  value      Float
+  achievedAt DateTime @default(now())
+
+  @@index([exerciseId, recordType])
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  passwordHash String
+  isAdmin      Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Settings {
+  id    String @id @default("singleton")
+  units String @default("kg") // kg, lbs
+  theme String @default("dark") // dark, light
+
+  // Coach-Profil / Persönlichkeitsdaten
+  goal         String @default("hypertrophy") // strength, hypertrophy, endurance
+  experience   String @default("intermediate") // beginner, intermediate, advanced
+  coachStyle   String @default("balanced") // cautious, balanced, aggressive
+  sex          String @default("") // m, f, ""
+  birthYear    Int?
+  bodyweightKg Float?
+  heightCm     Float?
+}

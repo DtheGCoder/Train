@@ -1,0 +1,135 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { Search, ChevronRight } from "lucide-react";
+import { Input, Select, Badge, EmptyState } from "@/components/ui";
+import { cn } from "@/lib/utils";
+
+export type ExerciseItem = {
+  id: string;
+  nameDe: string;
+  nameEn: string;
+  muscleSlug: string;
+  muscleName: string;
+  equipmentSlug: string | null;
+  equipmentName: string | null;
+  mechanic: string;
+  category: string;
+  isCustom: boolean;
+};
+
+type Option = { slug: string; name: string };
+
+export function ExerciseBrowser({
+  items,
+  muscles,
+  equipment,
+  selectable,
+  onPick,
+}: {
+  items: ExerciseItem[];
+  muscles: Option[];
+  equipment: Option[];
+  selectable?: boolean;
+  onPick?: (item: ExerciseItem) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [muscle, setMuscle] = useState("");
+  const [equip, setEquip] = useState("");
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((it) => {
+      if (muscle && it.muscleSlug !== muscle) return false;
+      if (equip && it.equipmentSlug !== equip) return false;
+      if (q && !`${it.nameDe} ${it.nameEn}`.toLowerCase().includes(q))
+        return false;
+      return true;
+    });
+  }, [items, query, muscle, equip]);
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+          <Input
+            placeholder="Übung suchen…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <div className="flex gap-2">
+          <Select value={muscle} onChange={(e) => setMuscle(e.target.value)}>
+            <option value="">Alle Muskeln</option>
+            {muscles.map((m) => (
+              <option key={m.slug} value={m.slug}>
+                {m.name}
+              </option>
+            ))}
+          </Select>
+          <Select value={equip} onChange={(e) => setEquip(e.target.value)}>
+            <option value="">Alle Geräte</option>
+            {equipment.map((e) => (
+              <option key={e.slug} value={e.slug}>
+                {e.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          title="Keine Übung gefunden"
+          description="Passe Suche oder Filter an."
+        />
+      ) : (
+        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
+          {filtered.map((it) => {
+            const content = (
+              <div className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-surface-2">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{it.nameDe}</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    <Badge className="bg-primary/15 text-primary">
+                      {it.muscleName}
+                    </Badge>
+                    {it.equipmentName && <Badge>{it.equipmentName}</Badge>}
+                    {it.isCustom && (
+                      <Badge className="bg-success/15 text-success">Eigene</Badge>
+                    )}
+                  </div>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted" />
+              </div>
+            );
+
+            if (selectable) {
+              return (
+                <li key={it.id}>
+                  <button
+                    onClick={() => onPick?.(it)}
+                    className="w-full text-left"
+                  >
+                    {content}
+                  </button>
+                </li>
+              );
+            }
+            return (
+              <li key={it.id}>
+                <Link href={`/exercises/${it.id}`}>{content}</Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <p className={cn("text-center text-xs text-muted")}>
+        {filtered.length} von {items.length}
+      </p>
+    </div>
+  );
+}
