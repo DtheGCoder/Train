@@ -5,7 +5,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { epley1RM } from "@/lib/utils";
 import { hashPassword, verifyPassword } from "@/lib/password";
-import { createSession, destroySession, requireAdmin } from "@/lib/auth";
+import {
+  createSession,
+  destroySession,
+  requireAdmin,
+  requireUser,
+} from "@/lib/auth";
+import { provisionTaxonomy, provisionUserContent } from "@/lib/provision";
 
 /* ---------------- Authentifizierung ---------------- */
 
@@ -63,7 +69,13 @@ export async function createUser(formData: FormData) {
   if (existing) return;
 
   const passwordHash = await hashPassword(password);
-  await db.user.create({ data: { username, passwordHash, isAdmin } });
+  const user = await db.user.create({
+    data: { username, passwordHash, isAdmin },
+  });
+
+  // Neuer Nutzer startet mit eigenem Übungskatalog, Vorlagen & Einstellungen.
+  await provisionTaxonomy(db);
+  await provisionUserContent(db, user.id);
 
   revalidatePath("/admin");
 }
@@ -88,6 +100,7 @@ export async function deleteUser(id: string) {
 /* ---------------- Übungen ---------------- */
 
 export async function createExercise(formData: FormData) {
+  const user = await requireUser();
   const nameDe = String(formData.get("nameDe") ?? "").trim();
   const primaryMuscleId = String(formData.get("primaryMuscleId") ?? "");
   const equipmentId = String(formData.get("equipmentId") ?? "");
@@ -105,6 +118,7 @@ export async function createExercise(formData: FormData) {
       mechanic,
       instructions,
       isCustom: true,
+      userId: user.id,
     },
   });
 
@@ -113,7 +127,8 @@ export async function createExercise(formData: FormData) {
 }
 
 export async function deleteExercise(id: string) {
-  await db.exercise.delete({ where: { id } });
+  const user = await requireUser();
+  await db.exercise.deleteMany({ where: { id, userId: user.id } });
   revalidatePath("/exercises");
   redirect("/exercises");
 }
@@ -121,49 +136,49 @@ export async function deleteExercise(id: string) {
 /* ---------------- Workouts ---------------- */
 
 export async function startWorkout(routineId?: string) {
+  const user = await requireUser();
   let name = "Freies Workout";
-  const data: { name: string; routineId?: string } = { name };
+  const data: { name: string; routineId?: string; userId: string } = {
+    name,
+    userId: user.id,
+  };
 
-  if (routineId) {
-    const routine = await db.routine.findUnique({
-      where: { id: routineId },
-      include: { exercises: { orderBy: { position: "asc" } } },
-    });
-    if (routine) {
-      name = routine.name;
-      data.name = name;
-      data.routineId = routine.id;
-    }
+  // Routine nur akzeptieren, wenn sie dem Nutzer gehört.
+  const routine = routineId
+    ? await db.routine.findFirst({
+        where: { id: routineId, userId: user.id },
+        include: { exercises: { orderBy: { position: "asc" } } },
+      })
+    : null;
+
+  if (routine) {
+    name = routine.name;
+    data.name = name;
+    data.routineId = routine.id;
   }
 
   const workout = await db.workout.create({ data });
 
   // Übungen + Zielsätze aus Routine übernehmen
-  if (routineId) {
-    const routine = await db.routine.findUnique({
-      where: { id: routineId },
-      include: { exercises: { orderBy: { position: "asc" } } },
-    });
-    if (routine) {
-      for (const re of routine.exercises) {
-        const we = await db.workoutExercise.create({
+  if (routine) {
+    for (const re of routine.exercises) {
+      const we = await db.workoutExercise.create({
+        data: {
+          workoutId: workout.id,
+          exerciseId: re.exerciseId,
+          position: re.position,
+          supersetGroup: re.supersetGroup,
+        },
+      });
+      for (let i = 0; i < re.targetSets; i++) {
+        await db.workoutSet.create({
           data: {
-            workoutId: workout.id,
-            exerciseId: re.exerciseId,
-            position: re.position,
-            supersetGroup: re.supersetGroup,
+            workoutExerciseId: we.id,
+            setNumber: i + 1,
+            reps: re.targetReps,
+            restSec: re.targetRestSec,
           },
         });
-        for (let i = 0; i < re.targetSets; i++) {
-          await db.workoutSet.create({
-            data: {
-              workoutExerciseId: we.id,
-              setNumber: i + 1,
-              reps: re.targetReps,
-              restSec: re.targetRestSec,
-            },
-          });
-        }
       }
     }
   }
@@ -175,6 +190,14 @@ export async function addExerciseToWorkout(
   workoutId: string,
   exerciseId: string,
 ) {
+  const user = await requireUser();
+  // Eigentum am Workout sicherstellen.
+  const workout = await db.workout.findFirst({
+    where: { id: workoutId, userId: user.id },
+    select: { id: true },
+  });
+  if (!workout) throw new Error("Workout nicht gefunden.");
+
   const count = await db.workoutExercise.count({ where: { workoutId } });
   const we = await db.workoutExercise.create({
     data: { workoutId, exerciseId, position: count },
@@ -187,10 +210,21 @@ export async function addExerciseToWorkout(
 }
 
 export async function removeWorkoutExercise(workoutExerciseId: string) {
-  await db.workoutExercise.delete({ where: { id: workoutExerciseId } });
+  const user = await requireUser();
+  await db.workoutExercise.deleteMany({
+    where: { id: workoutExerciseId, workout: { userId: user.id } },
+  });
 }
 
 export async function addSet(workoutExerciseId: string) {
+  const user = await requireUser();
+  // Eigentum sicherstellen.
+  const we = await db.workoutExercise.findFirst({
+    where: { id: workoutExerciseId, workout: { userId: user.id } },
+    select: { id: true },
+  });
+  if (!we) throw new Error("Übung nicht gefunden.");
+
   const last = await db.workoutSet.findFirst({
     where: { workoutExerciseId },
     orderBy: { setNumber: "desc" },
@@ -216,16 +250,24 @@ export async function updateSet(
     isCompleted?: boolean;
   },
 ) {
-  await db.workoutSet.update({ where: { id: setId }, data });
+  const user = await requireUser();
+  await db.workoutSet.updateMany({
+    where: { id: setId, workoutExercise: { workout: { userId: user.id } } },
+    data,
+  });
 }
 
 export async function deleteSet(setId: string) {
-  await db.workoutSet.delete({ where: { id: setId } });
+  const user = await requireUser();
+  await db.workoutSet.deleteMany({
+    where: { id: setId, workoutExercise: { workout: { userId: user.id } } },
+  });
 }
 
 export async function finishWorkout(workoutId: string) {
-  const workout = await db.workout.findUnique({
-    where: { id: workoutId },
+  const user = await requireUser();
+  const workout = await db.workout.findFirst({
+    where: { id: workoutId, userId: user.id },
     include: { exercises: { include: { sets: true } } },
   });
   if (!workout) return;
@@ -236,7 +278,7 @@ export async function finishWorkout(workoutId: string) {
       if (set.isCompleted) totalVolume += set.weight * set.reps;
     }
     // Persönliche Rekorde aktualisieren
-    await updatePRsForExercise(we.exerciseId);
+    await updatePRsForExercise(we.exerciseId, user.id);
   }
 
   await db.workout.update({
@@ -250,15 +292,16 @@ export async function finishWorkout(workoutId: string) {
 }
 
 export async function discardWorkout(workoutId: string) {
-  await db.workout.delete({ where: { id: workoutId } });
+  const user = await requireUser();
+  await db.workout.deleteMany({ where: { id: workoutId, userId: user.id } });
   revalidatePath("/");
   redirect("/");
 }
 
-async function updatePRsForExercise(exerciseId: string) {
+async function updatePRsForExercise(exerciseId: string, userId: string) {
   const sets = await db.workoutSet.findMany({
     where: {
-      workoutExercise: { exerciseId },
+      workoutExercise: { exerciseId, workout: { userId } },
       isCompleted: true,
     },
   });
@@ -276,12 +319,12 @@ async function updatePRsForExercise(exerciseId: string) {
 
   for (const [recordType, value] of records) {
     const existing = await db.personalRecord.findFirst({
-      where: { exerciseId, recordType },
+      where: { exerciseId, recordType, userId },
       orderBy: { value: "desc" },
     });
     if (!existing || value > existing.value) {
       await db.personalRecord.create({
-        data: { exerciseId, recordType, value },
+        data: { exerciseId, recordType, value, userId },
       });
     }
   }
@@ -290,17 +333,21 @@ async function updatePRsForExercise(exerciseId: string) {
 /* ---------------- Routinen ---------------- */
 
 export async function createRoutine(formData: FormData) {
+  const user = await requireUser();
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   if (!name) return;
-  const routine = await db.routine.create({ data: { name, description } });
+  const routine = await db.routine.create({
+    data: { name, description, userId: user.id },
+  });
   revalidatePath("/routines");
   redirect(`/routines/${routine.id}`);
 }
 
 export async function saveWorkoutAsRoutine(workoutId: string) {
-  const workout = await db.workout.findUnique({
-    where: { id: workoutId },
+  const user = await requireUser();
+  const workout = await db.workout.findFirst({
+    where: { id: workoutId, userId: user.id },
     include: {
       exercises: {
         orderBy: { position: "asc" },
@@ -314,6 +361,7 @@ export async function saveWorkoutAsRoutine(workoutId: string) {
     data: {
       name: `${workout.name} (Vorlage)`,
       description: "Aus Workout gespeichert",
+      userId: user.id,
     },
   });
 
@@ -352,8 +400,9 @@ export async function saveWorkoutAsRoutine(workoutId: string) {
 // Löscht alle Trainingsdaten: Workouts (inkl. Sätze per Cascade) und Rekorde.
 // Übungen, Pläne und das Coach-Profil bleiben erhalten.
 export async function resetAllData() {
-  await db.workout.deleteMany({});
-  await db.personalRecord.deleteMany({});
+  const user = await requireUser();
+  await db.workout.deleteMany({ where: { userId: user.id } });
+  await db.personalRecord.deleteMany({ where: { userId: user.id } });
   revalidatePath("/");
   revalidatePath("/stats");
   revalidatePath("/history");
@@ -370,6 +419,7 @@ export async function updateCoachProfile(
   _prevState: CoachProfileState,
   formData: FormData,
 ): Promise<CoachProfileState> {
+  const user = await requireUser();
   const str = (k: string) => String(formData.get(k) ?? "").trim();
   const num = (k: string) => {
     const v = parseFloat(str(k).replace(",", "."));
@@ -408,9 +458,9 @@ export async function updateCoachProfile(
 
   try {
     await db.settings.upsert({
-      where: { id: "singleton" },
+      where: { userId: user.id },
       update: data,
-      create: { id: "singleton", ...data },
+      create: { userId: user.id, ...data },
     });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Speichern fehlgeschlagen." };
@@ -422,7 +472,8 @@ export async function updateCoachProfile(
 }
 
 export async function deleteRoutine(id: string) {
-  await db.routine.delete({ where: { id } });
+  const user = await requireUser();
+  await db.routine.deleteMany({ where: { id, userId: user.id } });
   revalidatePath("/routines");
   redirect("/routines");
 }
@@ -431,6 +482,14 @@ export async function addRoutineExercise(
   routineId: string,
   exerciseId: string,
 ) {
+  const user = await requireUser();
+  // Eigentum an der Routine sicherstellen.
+  const routine = await db.routine.findFirst({
+    where: { id: routineId, userId: user.id },
+    select: { id: true },
+  });
+  if (!routine) throw new Error("Routine nicht gefunden.");
+
   const count = await db.routineExercise.count({ where: { routineId } });
   await db.routineExercise.create({
     data: { routineId, exerciseId, position: count },
@@ -443,11 +502,18 @@ export async function updateRoutineExercise(
   routineId: string,
   data: { targetSets?: number; targetReps?: number; targetRestSec?: number },
 ) {
-  await db.routineExercise.update({ where: { id }, data });
+  const user = await requireUser();
+  await db.routineExercise.updateMany({
+    where: { id, routine: { userId: user.id } },
+    data,
+  });
   revalidatePath(`/routines/${routineId}`);
 }
 
 export async function removeRoutineExercise(id: string, routineId: string) {
-  await db.routineExercise.delete({ where: { id } });
+  const user = await requireUser();
+  await db.routineExercise.deleteMany({
+    where: { id, routine: { userId: user.id } },
+  });
   revalidatePath(`/routines/${routineId}`);
 }

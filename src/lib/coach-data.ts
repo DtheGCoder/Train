@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import {
   type CoachProfile,
   type Goal,
@@ -8,9 +9,10 @@ import {
   DEFAULT_PROFILE,
 } from "@/lib/coach";
 
-// Lädt das Coach-Profil aus den Settings (Singleton) als typisiertes Objekt.
+// Lädt das Coach-Profil aus den Settings des aktuellen Nutzers als typisiertes Objekt.
 export async function loadCoachProfile(): Promise<CoachProfile> {
-  const s = await db.settings.findUnique({ where: { id: "singleton" } });
+  const user = await requireUser();
+  const s = await db.settings.findUnique({ where: { userId: user.id } });
   if (!s) return DEFAULT_PROFILE;
   return {
     goal: (s.goal as Goal) || "hypertrophy",

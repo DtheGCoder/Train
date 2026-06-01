@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 import { ChevronRight, Plus, Sparkles } from "lucide-react";
 import { PageHeader, Card, Input, Button, EmptyState } from "@/components/ui";
@@ -45,7 +46,9 @@ function RoutineList({ routines }: { routines: RoutineRow[] }) {
 }
 
 export default async function RoutinesPage() {
+  const user = await requireUser();
   const routines = await db.routine.findMany({
+    where: { userId: user.id },
     orderBy: { updatedAt: "desc" },
     include: { _count: { select: { exercises: true } } },
   });

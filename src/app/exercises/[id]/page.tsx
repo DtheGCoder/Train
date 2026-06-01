@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Trash2 } from "lucide-react";
@@ -17,14 +18,15 @@ export default async function ExerciseDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const exercise = await db.exercise.findUnique({
-    where: { id },
+  const user = await requireUser();
+  const exercise = await db.exercise.findFirst({
+    where: { id, userId: user.id },
     include: { primaryMuscle: true, equipment: true },
   });
   if (!exercise) notFound();
 
   const prs = await db.personalRecord.findMany({
-    where: { exerciseId: id },
+    where: { exerciseId: id, userId: user.id },
     orderBy: { value: "desc" },
   });
   const best = (type: string) =>
@@ -35,7 +37,7 @@ export default async function ExerciseDetail({
   const sessions = await db.workoutExercise.findMany({
     where: {
       exerciseId: id,
-      workout: { finishedAt: { not: null } },
+      workout: { finishedAt: { not: null }, userId: user.id },
     },
     include: {
       workout: true,

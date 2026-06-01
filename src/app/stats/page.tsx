@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { PageHeader, Card, EmptyState } from "@/components/ui";
 import { StatsCharts } from "@/components/stats-charts";
 import { MuscleTrends } from "@/components/stats-muscle-trends";
@@ -9,8 +10,9 @@ import { de } from "date-fns/locale";
 export const dynamic = "force-dynamic";
 
 export default async function StatsPage() {
+  const user = await requireUser();
   const workouts = await db.workout.findMany({
-    where: { finishedAt: { not: null } },
+    where: { userId: user.id, finishedAt: { not: null } },
     orderBy: { startedAt: "asc" },
     include: {
       exercises: {
@@ -87,7 +89,7 @@ export default async function StatsPage() {
   });
 
   const prs = await db.personalRecord.findMany({
-    where: { recordType: "1rm" },
+    where: { userId: user.id, recordType: "1rm" },
     orderBy: { value: "desc" },
     include: { exercise: true },
     take: 10,

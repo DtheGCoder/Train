@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { notFound, redirect } from "next/navigation";
 import { WorkoutSession } from "@/components/workout-session";
 import { loadCoachProfile } from "@/lib/coach-data";
@@ -11,8 +12,9 @@ export default async function WorkoutPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const workout = await db.workout.findUnique({
-    where: { id },
+  const user = await requireUser();
+  const workout = await db.workout.findFirst({
+    where: { id, userId: user.id },
     include: {
       exercises: {
         orderBy: { position: "asc" },
@@ -32,7 +34,7 @@ export default async function WorkoutPage({
     const prevWe = await db.workoutExercise.findFirst({
       where: {
         exerciseId: we.exerciseId,
-        workout: { finishedAt: { not: null } },
+        workout: { finishedAt: { not: null }, userId: user.id },
         workoutId: { not: workout.id },
       },
       orderBy: { workout: { startedAt: "desc" } },
@@ -48,6 +50,7 @@ export default async function WorkoutPage({
 
   const [allExercises, muscles, equipment] = await Promise.all([
     db.exercise.findMany({
+      where: { userId: user.id },
       include: { primaryMuscle: true, equipment: true },
       orderBy: { nameDe: "asc" },
     }),
@@ -60,7 +63,7 @@ export default async function WorkoutPage({
   const [profile, oneRmPrs] = await Promise.all([
     loadCoachProfile(),
     db.personalRecord.findMany({
-      where: { exerciseId: { in: exerciseIds }, recordType: "1rm" },
+      where: { userId: user.id, exerciseId: { in: exerciseIds }, recordType: "1rm" },
       orderBy: { value: "desc" },
     }),
   ]);

@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Timer, Dumbbell, TrendingUp, BookmarkPlus } from "lucide-react";
@@ -17,8 +18,9 @@ export default async function WorkoutDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const workout = await db.workout.findUnique({
-    where: { id },
+  const user = await requireUser();
+  const workout = await db.workout.findFirst({
+    where: { id, userId: user.id },
     include: {
       exercises: {
         orderBy: { position: "asc" },

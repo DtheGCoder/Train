@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { PageHeader, LinkButton } from "@/components/ui";
 import { ExerciseBrowser } from "@/components/exercise-browser";
 import { Plus } from "lucide-react";
@@ -6,8 +7,10 @@ import { Plus } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function ExercisesPage() {
+  const user = await requireUser();
   const [exercises, muscles, equipment] = await Promise.all([
     db.exercise.findMany({
+      where: { userId: user.id },
       include: { primaryMuscle: true, equipment: true },
       orderBy: { nameDe: "asc" },
     }),

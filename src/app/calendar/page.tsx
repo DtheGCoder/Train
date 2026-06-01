@@ -1,12 +1,14 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { PageHeader, EmptyState } from "@/components/ui";
 import { WorkoutCalendar } from "@/components/workout-calendar";
 
 export const dynamic = "force-dynamic";
 
 export default async function CalendarPage() {
+  const user = await requireUser();
   const workouts = await db.workout.findMany({
-    where: { finishedAt: { not: null } },
+    where: { userId: user.id, finishedAt: { not: null } },
     orderBy: { startedAt: "desc" },
     include: { exercises: { include: { sets: true } } },
   });

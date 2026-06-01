@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState } from "@/components/ui";
@@ -9,8 +10,9 @@ import { de } from "date-fns/locale";
 export const dynamic = "force-dynamic";
 
 export default async function HistoryPage() {
+  const user = await requireUser();
   const workouts = await db.workout.findMany({
-    where: { finishedAt: { not: null } },
+    where: { userId: user.id, finishedAt: { not: null } },
     orderBy: { startedAt: "desc" },
     include: {
       _count: { select: { exercises: true } },

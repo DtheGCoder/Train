@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -12,8 +13,9 @@ export default async function RoutineDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const routine = await db.routine.findUnique({
-    where: { id },
+  const user = await requireUser();
+  const routine = await db.routine.findFirst({
+    where: { id, userId: user.id },
     include: {
       exercises: {
         orderBy: { position: "asc" },
@@ -25,6 +27,7 @@ export default async function RoutineDetail({
 
   const [allExercises, muscles, equipment] = await Promise.all([
     db.exercise.findMany({
+      where: { userId: user.id },
       include: { primaryMuscle: true, equipment: true },
       orderBy: { nameDe: "asc" },
     }),

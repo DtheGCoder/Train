@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { requireUser } from "@/lib/auth";
 import Link from "next/link";
 import { Play, Dumbbell, ChevronRight, Flame, UserCog } from "lucide-react";
 import { Card, Button, LinkButton, PageHeader } from "@/components/ui";
@@ -10,27 +11,30 @@ import { de } from "date-fns/locale";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
+  const user = await requireUser();
+
   const active = await db.workout.findFirst({
-    where: { finishedAt: null },
+    where: { userId: user.id, finishedAt: null },
     orderBy: { startedAt: "desc" },
     include: { _count: { select: { exercises: true } } },
   });
 
   const recent = await db.workout.findMany({
-    where: { finishedAt: { not: null } },
+    where: { userId: user.id, finishedAt: { not: null } },
     orderBy: { startedAt: "desc" },
     take: 5,
     include: { _count: { select: { exercises: true } } },
   });
 
   const routines = await db.routine.findMany({
+    where: { userId: user.id },
     orderBy: { updatedAt: "desc" },
     take: 4,
     include: { _count: { select: { exercises: true } } },
   });
 
   const totalWorkouts = await db.workout.count({
-    where: { finishedAt: { not: null } },
+    where: { userId: user.id, finishedAt: { not: null } },
   });
 
   return (
