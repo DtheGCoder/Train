@@ -5,6 +5,7 @@ import { PageHeader, Card, Button, Input } from "@/components/ui";
 import { DeleteUserButton } from "@/components/delete-user-button";
 import { ManualUpdateButton } from "@/components/manual-update-button";
 import { getVersionInfo, GITHUB_URL } from "@/lib/version";
+import { readUpdateStatus } from "@/lib/update-status.server";
 import {
   ShieldCheck,
   UserPlus,
@@ -20,9 +21,10 @@ export const dynamic = "force-dynamic";
 export default async function AdminPage() {
   const me = await requireAdmin();
 
-  const [users, version] = await Promise.all([
+  const [users, version, updateStatus] = await Promise.all([
     db.user.findMany({ orderBy: { createdAt: "asc" } }),
     getVersionInfo(),
+    readUpdateStatus(),
   ]);
 
   const adminCount = users.filter((u) => u.isAdmin).length;
@@ -92,7 +94,10 @@ export default async function AdminPage() {
           </p>
         )}
 
-        {version.upToDate === false && <ManualUpdateButton />}
+        <ManualUpdateButton
+          updateAvailable={version.upToDate === false}
+          initialStatus={updateStatus}
+        />
 
         <a
           href={GITHUB_URL}

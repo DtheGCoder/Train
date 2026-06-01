@@ -15,6 +15,8 @@ import {
 } from "@/lib/auth";
 import { provisionTaxonomy, provisionUserContent } from "@/lib/provision";
 import { getVersionInfo } from "@/lib/version";
+import { isUpdateActive } from "@/lib/update-status";
+import { readUpdateStatus, writeUpdateStatus } from "@/lib/update-status.server";
 
 /* ---------------- Authentifizierung ---------------- */
 
@@ -114,6 +116,14 @@ export type UpdateState = { ok?: boolean; error?: string } | undefined;
 export async function triggerManualUpdate(): Promise<UpdateState> {
   await requireAdmin();
 
+  // Läuft bereits eins? Dann nicht erneut anstoßen. Schützt vor Doppelklicks,
+  // mehreren Tabs und Reload-Spam – und vermeidet parallele Läufe mit dem
+  // automatischen Timer.
+  const running = await readUpdateStatus();
+  if (isUpdateActive(running)) {
+    return { error: "Ein Update läuft bereits." };
+  }
+
   // Nur aktualisieren, wenn GitHub wirklich einen neueren Commit hat.
   const version = await getVersionInfo();
   if (version.upToDate === true) {
@@ -125,6 +135,21 @@ export async function triggerManualUpdate(): Promise<UpdateState> {
         version.error ?? "Update-Status konnte nicht ermittelt werden.",
     };
   }
+
+  // Sofort einen "läuft"-Status schreiben: blockt weitere Klicks (auch nach
+  // einem Reload) und das UI zeigt unmittelbar Fortschritt, noch bevor das
+  // Skript den ersten Schritt erreicht.
+  const now = new Date().toISOString();
+  await writeUpdateStatus({
+    state: "running",
+    step: "start",
+    startedAt: now,
+    updatedAt: now,
+    fromSha: version.currentSha,
+    toSha: version.latest?.sha ?? null,
+    message: "Update wird vorbereitet…",
+    error: "",
+  });
 
   const script = path.join(process.cwd(), "scripts", "auto-update.sh");
 
@@ -138,12 +163,22 @@ export async function triggerManualUpdate(): Promise<UpdateState> {
     });
     child.unref();
   } catch (e) {
-    return {
-      error:
-        e instanceof Error
-          ? `Update konnte nicht gestartet werden: ${e.message}`
-          : "Update konnte nicht gestartet werden.",
-    };
+    // Status auf Fehler setzen, damit der Button wieder erscheint.
+    const message =
+      e instanceof Error
+        ? `Update konnte nicht gestartet werden: ${e.message}`
+        : "Update konnte nicht gestartet werden.";
+    await writeUpdateStatus({
+      state: "error",
+      step: "start",
+      startedAt: now,
+      updatedAt: new Date().toISOString(),
+      fromSha: version.currentSha,
+      toSha: version.latest?.sha ?? null,
+      message: "",
+      error: message,
+    });
+    return { error: message };
   }
 
   return { ok: true };
