@@ -375,7 +375,8 @@ export async function finishWorkout(workoutId: string) {
 
   revalidatePath("/history");
   revalidatePath("/");
-  redirect(`/history/${workoutId}`);
+  // Bewusst KEIN redirect: der Client zeigt erst die Abschluss-Übersicht
+  // (inkl. Coach-Fazit) und navigiert selbst, wenn der Nutzer weiterklickt.
 }
 
 export async function discardWorkout(workoutId: string) {

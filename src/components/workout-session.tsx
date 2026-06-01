@@ -19,7 +19,9 @@ import {
   Dumbbell,
   Flag,
   Loader2,
+  ArrowRight,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { ExerciseBrowser, type ExerciseItem } from "@/components/exercise-browser";
 import { RestTimer } from "@/components/rest-timer";
@@ -38,6 +40,8 @@ import {
   liveReaction,
   repsForWeight,
   recommendedRest,
+  coachWorkoutSummary,
+  type WorkoutSummary,
 } from "@/lib/coach";
 import {
   updateSet,
@@ -98,7 +102,12 @@ export function WorkoutSession({
   const [restSeconds, setRestSeconds] = useState<number | null>(null);
   const [restKey, setRestKey] = useState(0);
   const [, startTransition] = useTransition();
+  const router = useRouter();
   const [isFinishing, setIsFinishing] = useState(false);
+  // Abschluss-Übersicht: Coach-Fazit (Snapshot beim Beenden) + ob bereits
+  // gespeichert wurde (steuert den Weiter-Button, der zur Verlaufsseite führt).
+  const [finishSummary, setFinishSummary] = useState<WorkoutSummary | null>(null);
+  const [finishSaved, setFinishSaved] = useState(false);
   // Letzter getippter RPE-Wert je Satz (synchron, damit das Abhaken den
   // gerade eingegebenen Wert auswertet, bevor der State-Re-Render greift).
   const rpeRef = useRef<Record<string, number | null>>({});
@@ -356,13 +365,51 @@ export function WorkoutSession({
 
   const handleFinish = () => {
     if (isFinishing) return;
+
+    // Coach-Fazit aus dem aktuellen Stand berechnen (Snapshot beim Beenden).
+    const exSummaries = exercises
+      .map((ex) => {
+        const completed = workingSetsOf(ex).filter((s) => s.isCompleted);
+        if (completed.length === 0) return null;
+        const top = completed.reduce((a, b) => (b.weight > a.weight ? b : a));
+        const sessionE1RM = bestE1RM(
+          completed.map((s) => ({ weight: s.weight, reps: s.reps, rpe: s.rpe })),
+        );
+        return {
+          name: ex.name,
+          workSets: completed.length,
+          topWeight: top.weight,
+          topReps: top.reps,
+          sessionE1RM,
+          baselineE1RM: coach.baseline[ex.exerciseId] ?? 0,
+          status: insightOf(ex).status,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+
+    setFinishSummary(
+      coachWorkoutSummary(
+        {
+          exercises: exSummaries,
+          totalVolume: stats.volume,
+          totalSets: stats.completedSets,
+          durationSec: elapsed,
+        },
+        coach.profile,
+      ),
+    );
     setIsFinishing(true);
-    // Erst die Abschluss-Feier zeigen, dann speichern & weiterleiten.
-    window.setTimeout(() => {
-      startTransition(async () => {
-        await finishWorkout(initial.id);
-      });
-    }, 1200);
+
+    // Im Hintergrund speichern (ohne Redirect) – der Nutzer klickt selbst
+    // weiter, sobald er die Übersicht gelesen hat.
+    startTransition(async () => {
+      await finishWorkout(initial.id);
+      setFinishSaved(true);
+    });
+  };
+
+  const handleGoToHistory = () => {
+    router.push(`/history/${initial.id}`);
   };
 
   const handleDiscard = () => {
@@ -374,12 +421,15 @@ export function WorkoutSession({
 
   return (
     <div className="space-y-4 pb-28">
-      {/* Abschluss-Feier */}
+      {/* Abschluss-Feier + Übersicht */}
       {isFinishing && (
         <FinishOverlay
           durationLabel={formatDuration(elapsed)}
           volume={stats.volume}
           sets={stats.completedSets}
+          summary={finishSummary}
+          saved={finishSaved}
+          onContinue={handleGoToHistory}
         />
       )}
 
@@ -699,17 +749,24 @@ function Reveal({
   );
 }
 
-// Vollbild-Feier beim Abschließen eines Workouts: aufploppender Erfolgs-Haken
-// mit Ringen, Konfetti und einer kurzen Statistik – danach wird gespeichert
-// und auf die Verlaufsseite weitergeleitet.
+// Vollbild-Übersicht beim Abschließen eines Workouts: aufploppender Erfolgs-
+// Haken mit Ringen & Konfetti, eine kurze Statistik und das Coach-Fazit.
+// Bleibt offen, bis der Nutzer selbst weiterklickt (nichts verschwindet von
+// allein, damit man in Ruhe lesen kann).
 function FinishOverlay({
   durationLabel,
   volume,
   sets,
+  summary,
+  saved,
+  onContinue,
 }: {
   durationLabel: string;
   volume: number;
   sets: number;
+  summary: WorkoutSummary | null;
+  saved: boolean;
+  onContinue: () => void;
 }) {
   const pieces = useMemo(() => {
     const colors = [
@@ -736,7 +793,7 @@ function FinishOverlay({
   }, []);
 
   return (
-    <div className="finish-overlay fixed inset-0 z-[60] flex flex-col items-center justify-center bg-background/92 px-6 backdrop-blur-sm">
+    <div className="finish-overlay fixed inset-0 z-[60] flex flex-col items-center overflow-y-auto bg-background/95 px-6 py-10 backdrop-blur-sm">
       {/* Konfetti */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         {pieces.map((p, i) => (
@@ -755,44 +812,86 @@ function FinishOverlay({
         ))}
       </div>
 
-      {/* Erfolgs-Haken mit Ringen */}
-      <div className="relative flex size-28 items-center justify-center">
-        <span className="absolute inline-flex size-full animate-ping rounded-full bg-success/30" />
-        <span className="absolute inline-flex size-20 rounded-full bg-success/15" />
-        <div className="finish-pop relative flex size-24 items-center justify-center rounded-full bg-success text-white shadow-lg shadow-success/40">
-          <Check className="size-12" strokeWidth={3} />
-        </div>
-      </div>
-
-      <div
-        className="finish-rise mt-6 text-center"
-        style={{ animationDelay: "0.12s" }}
-      >
-        <p className="text-2xl font-bold">Geschafft! 💪</p>
-        <p className="mt-1 text-sm text-muted">Workout abgeschlossen</p>
-
-        <div className="mt-5 flex items-center justify-center gap-6 text-sm">
-          <div>
-            <p className="text-lg font-bold tabular-nums">{durationLabel}</p>
-            <p className="text-xs text-muted">Dauer</p>
-          </div>
-          <div className="h-8 w-px bg-border" />
-          <div>
-            <p className="text-lg font-bold tabular-nums">
-              {Math.round(volume)} kg
-            </p>
-            <p className="text-xs text-muted">Volumen</p>
-          </div>
-          <div className="h-8 w-px bg-border" />
-          <div>
-            <p className="text-lg font-bold tabular-nums">{sets}</p>
-            <p className="text-xs text-muted">Sätze</p>
+      <div className="relative my-auto flex w-full max-w-sm flex-col items-center">
+        {/* Erfolgs-Haken mit Ringen */}
+        <div className="relative flex size-28 items-center justify-center">
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-success/30" />
+          <span className="absolute inline-flex size-20 rounded-full bg-success/15" />
+          <div className="finish-pop relative flex size-24 items-center justify-center rounded-full bg-success text-white shadow-lg shadow-success/40">
+            <Check className="size-12" strokeWidth={3} />
           </div>
         </div>
 
-        <p className="mt-6 inline-flex items-center gap-2 text-xs text-muted">
-          <Loader2 className="size-3.5 animate-spin" /> wird gespeichert…
-        </p>
+        <div
+          className="finish-rise mt-6 w-full text-center"
+          style={{ animationDelay: "0.12s" }}
+        >
+          <p className="text-2xl font-bold">Geschafft! 💪</p>
+          <p className="mt-1 text-sm text-muted">Workout abgeschlossen</p>
+
+          <div className="mt-5 flex items-center justify-center gap-6 text-sm">
+            <div>
+              <p className="text-lg font-bold tabular-nums">{durationLabel}</p>
+              <p className="text-xs text-muted">Dauer</p>
+            </div>
+            <div className="h-8 w-px bg-border" />
+            <div>
+              <p className="text-lg font-bold tabular-nums">
+                {Math.round(volume)} kg
+              </p>
+              <p className="text-xs text-muted">Volumen</p>
+            </div>
+            <div className="h-8 w-px bg-border" />
+            <div>
+              <p className="text-lg font-bold tabular-nums">{sets}</p>
+              <p className="text-xs text-muted">Sätze</p>
+            </div>
+          </div>
+
+          {/* Coach-Fazit */}
+          {summary && (
+            <div className="mt-6 rounded-xl border border-border bg-surface p-4 text-left">
+              <div className="mb-2 flex items-center gap-2">
+                <Dumbbell className="size-4 text-primary" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  Dein Coach
+                </span>
+              </div>
+              <p className="font-semibold">{summary.headline}</p>
+              {summary.notes.length > 0 && (
+                <ul className="mt-2 space-y-1.5">
+                  {summary.notes.map((n, i) => (
+                    <li
+                      key={i}
+                      className="flex gap-2 text-sm text-muted"
+                    >
+                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/70" />
+                      <span>{n}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {/* Weiter – der Nutzer klickt selbst weiter */}
+          <button
+            type="button"
+            onClick={onContinue}
+            disabled={!saved}
+            className="mt-6 inline-flex min-h-12 w-full select-none items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:opacity-90 active:opacity-80 disabled:opacity-60"
+          >
+            {saved ? (
+              <>
+                Zum Verlauf <ArrowRight className="size-4" />
+              </>
+            ) : (
+              <>
+                <Loader2 className="size-4 animate-spin" /> wird gespeichert…
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

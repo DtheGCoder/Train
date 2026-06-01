@@ -735,3 +735,119 @@ export function rpeLabel(rpe: number): string {
   if (rpe >= 7) return "Fordernd – 3 Wdh in Reserve";
   return "Leicht – viel Reserve";
 }
+
+/* ---------------- Abschluss-Fazit (nach dem Workout) ---------------- */
+
+// Zusammenfassung einer abgeschlossenen Übung dieser Einheit.
+export type WorkoutExerciseSummary = {
+  name: string;
+  workSets: number; // abgehakte Arbeitssätze (ohne Aufwärmen)
+  topWeight: number; // schwerstes bewegtes Arbeitsgewicht
+  topReps: number; // Wdh beim schwersten Satz
+  sessionE1RM: number; // bestes geschätztes 1RM NUR dieser Einheit
+  baselineE1RM: number; // bestes geschätztes 1RM davor (Historie)
+  status: HistoryStatus; // Trend laut Verlauf
+};
+
+export type WorkoutSummaryInput = {
+  exercises: WorkoutExerciseSummary[];
+  totalVolume: number;
+  totalSets: number; // abgehakte Sätze gesamt
+  durationSec: number;
+};
+
+export type WorkoutSummary = {
+  headline: string;
+  notes: string[];
+};
+
+// Schonungslos ehrliches, aber motivierendes Kurz-Fazit des Coaches zum
+// gesamten Training: hebt neue Schätz-Bestwerte hervor, benennt Fortschritt
+// genauso wie Stagnation – im Tonfall des gewählten Coach-Stils. Deterministisch.
+export function coachWorkoutSummary(
+  input: WorkoutSummaryInput,
+  profile: CoachProfile,
+): WorkoutSummary {
+  const { exercises, totalSets } = input;
+  const style = profile.coachStyle;
+
+  // Gar nichts abgehakt: ehrlich ansprechen, nicht schönreden.
+  if (totalSets === 0 || exercises.length === 0) {
+    return {
+      headline: "Beendet – aber kein Satz abgehakt.",
+      notes: [
+        "Kein abgeschlossener Arbeitssatz heute. Zählt trotzdem als Anwesenheit – beim nächsten Mal hak die Sätze ab, dann kann ich dich richtig steuern.",
+      ],
+    };
+  }
+
+  // Neue Schätz-Bestwerte (sessionE1RM klar über bisheriger Bestmarke).
+  const prs = exercises
+    .filter((e) => e.baselineE1RM > 0 && e.sessionE1RM > e.baselineE1RM * 1.005)
+    .sort((a, b) => b.sessionE1RM - a.sessionE1RM);
+  const debuts = exercises.filter((e) => e.baselineE1RM === 0 && e.workSets > 0);
+  const rising = exercises.filter((e) => e.status === "rising");
+  const stalling = exercises.filter(
+    (e) => e.status === "stalled" || e.status === "regressing",
+  );
+
+  const notes: string[] = [];
+
+  // 1) Bestwerte zuerst – die feiert der Coach.
+  for (const e of prs.slice(0, 2)) {
+    notes.push(
+      `${e.name}: neuer Schätz-Bestwert – ~${Math.round(e.sessionE1RM)} kg (1RM) bei ${e.topWeight}×${e.topReps}.`,
+    );
+  }
+
+  // 2) Aufwärtstrend ohne PR.
+  if (prs.length === 0 && rising.length > 0) {
+    notes.push(`${rising[0].name} zieht an – der Trend zeigt nach oben.`);
+  }
+
+  // 3) Ehrlich: Stagnation/Rückgang benennen (max. eine, die wichtigste).
+  if (notes.length < 3 && stalling.length > 0) {
+    const e = stalling[0];
+    notes.push(
+      e.status === "regressing"
+        ? `${e.name} lag unter dem letzten Mal – kann Tagesform sein. Nächstes Mal genau hinsehen: Schlaf, Aufwärmen, Pausen.`
+        : `${e.name} stagniert seit ein paar Einheiten. Zeit für einen kleinen Reizwechsel – Wdh, Tempo oder eine leichte Deload-Woche.`,
+    );
+  }
+
+  // 4) Debüt-Übung(en) ohne Historie.
+  if (notes.length < 3 && prs.length === 0 && debuts.length > 0) {
+    notes.push(
+      `${debuts[0].name} ist neu im Log – ab jetzt vergleiche ich jede Einheit dagegen.`,
+    );
+  }
+
+  // Fallback, falls noch keine Notiz: solide Konstanz würdigen.
+  if (notes.length === 0) {
+    notes.push(
+      "Sauber und konstant durchgezogen. Genau diese Wiederholbarkeit baut langfristig auf.",
+    );
+  }
+
+  // Überschrift nach Lage + Coach-Stil.
+  let headline: string;
+  if (prs.length > 0) {
+    headline =
+      style === "aggressive"
+        ? "Brutal stark – Rekord eingetütet. 🔥"
+        : style === "cautious"
+          ? "Sauber gearbeitet – und ein neuer Bestwert obendrauf."
+          : "Stark – neuer Bestwert drin!";
+  } else if (rising.length > 0) {
+    headline = "Solide Einheit – es geht aufwärts.";
+  } else if (stalling.length > 0) {
+    headline =
+      style === "aggressive"
+        ? "Durchgezogen – aber heute kein Schritt nach vorn."
+        : "Ordentlich durchgezogen – Fortschritt lässt noch auf sich warten.";
+  } else {
+    headline = "Sauber durchgezogen. Konstanz zahlt sich aus.";
+  }
+
+  return { headline, notes: notes.slice(0, 3) };
+}
