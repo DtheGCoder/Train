@@ -166,4 +166,10 @@ model Settings {
   birthYear    Int?
   bodyweightKg Float?
   heightCm     Float?
+
+  // Erweiterte Coach-Daten (mehr Personalisierung)
+  trainingDaysPerWeek Int? // 1-7, beeinflusst Volumen-/Erholungs-Hinweise
+  limitations         String @default("") // Verletzungen/Einschränkungen (Freitext)
+  availableEquipment  String @default("") // CSV Equipment-Slugs; "" = alles verfügbar
+  preferredRepStyle   String @default("auto") // auto, low, high — feinjustiert Wdh.
 }

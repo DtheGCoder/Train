@@ -13,6 +13,14 @@ if [ ! -f .env ]; then
   cp .env.example .env
 fi
 
+# 1b) .env in die Umgebung laden, damit der Seed-Prozess (tsx) DATABASE_URL
+#     und ADMIN_PASSWORD kennt. Ohne das fällt der Seed auf dev.db zurück!
+set -a
+# shellcheck disable=SC1091
+. ./.env
+set +a
+echo "==> .env geladen (DATABASE_URL=${DATABASE_URL:-nicht gesetzt})"
+
 # 2) Abhängigkeiten installieren (inkl. native better-sqlite3 Neukompilierung)
 echo "==> npm ci"
 npm ci

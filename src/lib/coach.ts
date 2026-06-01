@@ -8,6 +8,8 @@ export type Goal = "strength" | "hypertrophy" | "endurance";
 export type Experience = "beginner" | "intermediate" | "advanced";
 export type CoachStyle = "cautious" | "balanced" | "aggressive";
 
+export type RepStyle = "auto" | "low" | "high";
+
 export type CoachProfile = {
   goal: Goal;
   experience: Experience;
@@ -16,6 +18,11 @@ export type CoachProfile = {
   heightCm: number | null;
   birthYear: number | null;
   sex: string;
+  // Erweiterte Daten
+  trainingDaysPerWeek: number | null;
+  limitations: string;
+  availableEquipment: string; // CSV Equipment-Slugs; "" = alles
+  preferredRepStyle: RepStyle;
 };
 
 export const DEFAULT_PROFILE: CoachProfile = {
@@ -26,6 +33,16 @@ export const DEFAULT_PROFILE: CoachProfile = {
   heightCm: null,
   birthYear: null,
   sex: "",
+  trainingDaysPerWeek: null,
+  limitations: "",
+  availableEquipment: "",
+  preferredRepStyle: "auto",
+};
+
+export const REP_STYLE_LABELS: Record<RepStyle, string> = {
+  auto: "Automatisch (Coach entscheidet)",
+  low: "Lieber schwerer / weniger Wdh.",
+  high: "Lieber leichter / mehr Wdh.",
 };
 
 export type SetLike = { weight: number; reps: number; rpe?: number | null };
@@ -124,12 +141,36 @@ export type SetRecommendation = {
   hasBaseline: boolean;
 };
 
-// Zielwiederholungen abhängig von Ziel + Stil.
+// Zielwiederholungen abhängig von Ziel + Stil + bevorzugtem Wdh.-Stil.
 export function targetReps(profile: CoachProfile): number {
   const g = GOAL_CONFIG[profile.goal];
   const mid = (g.repLow + g.repHigh) / 2;
-  const bias = STYLE_CONFIG[profile.coachStyle].repBias;
+  let bias = STYLE_CONFIG[profile.coachStyle].repBias;
+  // Persönliche Vorliebe verschiebt das Ziel innerhalb des Bereichs.
+  if (profile.preferredRepStyle === "low") bias -= 2;
+  if (profile.preferredRepStyle === "high") bias += 2;
   return Math.round(Math.min(g.repHigh, Math.max(g.repLow, mid + bias)));
+}
+
+/* ---------------- Alters-/Erfahrungs-Modifikatoren ---------------- */
+
+// Mit dem Alter wird konservativer gesteigert und mehr Aufwärmen empfohlen.
+// Gibt einen Faktor (1 = neutral, <1 = vorsichtiger) auf die Laststeigerung.
+export function ageStepModifier(profile: CoachProfile): number {
+  const a = age(profile);
+  if (a === null) return 1;
+  if (a >= 55) return 0.65;
+  if (a >= 45) return 0.8;
+  if (a >= 35) return 0.92;
+  return 1;
+}
+
+// Effektive Schrittweite (% Laststeigerung) inkl. Erfahrung & Alter.
+function effectiveStep(profile: CoachProfile): number {
+  const style = STYLE_CONFIG[profile.coachStyle];
+  return (
+    style.stepPct * EXPERIENCE_FACTOR[profile.experience] * ageStepModifier(profile)
+  );
 }
 
 // Empfehlung für den nächsten Arbeitssatz auf Basis des aktuellen e1RM.
@@ -172,13 +213,27 @@ export function autoregulate(
   const achieved = e1rm(done.weight, done.reps);
   const newE1RM = Math.max(oneRm, achieved);
   const pr = achieved > oneRm + 0.01 && done.weight > 0;
-  const step =
-    1 + style.stepPct * EXPERIENCE_FACTOR[profile.experience];
+  const step = 1 + effectiveStep(profile);
 
   const rpe = done.rpe ?? null;
   const beatBy = done.reps - tgtReps;
   const lightRpe = rpe !== null && rpe <= style.pushRpe - 1;
   const hardRpe = rpe !== null && rpe >= 9.5;
+
+  // RPE dominiert, wenn vorhanden: ein sehr schwerer Satz (RPE ~10) trotz
+  // erreichter Wiederholungen heißt "Gewicht halten", nicht steigern.
+  if (rpe !== null && rpe >= 9.5 && done.weight > 0) {
+    return {
+      nextWeight: done.weight,
+      nextReps: tgtReps,
+      newE1RM,
+      pr,
+      tone: "hold",
+      message:
+        `RPE ${rpe} – das war fast alles. Beim nächsten Satz gleiches Gewicht ` +
+        `(${done.weight} kg) und sauber für ${tgtReps} Wdh halten.`,
+    };
+  }
 
   // Deutliche Reserve → Limit-Test anbieten.
   if ((beatBy >= 2 || lightRpe) && done.weight > 0 && !hardRpe) {
@@ -300,4 +355,100 @@ export function liveReaction(
 export function age(profile: CoachProfile): number | null {
   if (!profile.birthYear) return null;
   return new Date().getFullYear() - profile.birthYear;
+}
+
+/* ---------------- Aufwärm-Plan ---------------- */
+
+export type WarmupSet = { weight: number; reps: number; pct: number };
+
+// Aufwärmsätze als Rampe zum Arbeitsgewicht. Ältere/Schwerere Lasten →
+// mehr Aufwärmsätze. Bei kleinen Lasten (Körpergewicht-nah) leer.
+export function warmupPlan(
+  workWeight: number,
+  profile: CoachProfile,
+): WarmupSet[] {
+  if (workWeight < 20) return []; // zu leicht für separates Aufwärmen
+  const a = age(profile);
+  const heavy = profile.goal === "strength";
+  // Prozentschritte vom Arbeitsgewicht.
+  let steps = heavy ? [0.4, 0.6, 0.8] : [0.5, 0.75];
+  if ((a !== null && a >= 45) || heavy) steps = [0.4, 0.55, 0.7, 0.85];
+  return steps.map((pct) => ({
+    pct: Math.round(pct * 100),
+    weight: roundToIncrement(workWeight * pct),
+    reps: pct < 0.55 ? 8 : pct < 0.75 ? 5 : 3,
+  }));
+}
+
+/* ---------------- Pausen-Empfehlung ---------------- */
+
+// Empfohlene Satzpause in Sekunden, abhängig von Ziel & Stil.
+export function recommendedRest(profile: CoachProfile): number {
+  const base =
+    profile.goal === "strength"
+      ? 180
+      : profile.goal === "hypertrophy"
+        ? 105
+        : 60; // endurance
+  // Aggressiver Stil drückt etwas kürzer (Dichte), vorsichtig etwas länger.
+  const adj =
+    profile.coachStyle === "aggressive"
+      ? -15
+      : profile.coachStyle === "cautious"
+        ? 20
+        : 0;
+  return Math.max(45, base + adj);
+}
+
+/* ---------------- Session-/Bereitschafts-Hinweise ---------------- */
+
+// Kontextueller Hinweis zu Beginn/auf der Übungsebene – nutzt erweiterte Daten.
+export function sessionAdvice(profile: CoachProfile): string[] {
+  const tips: string[] = [];
+  const a = age(profile);
+  if (a !== null && a >= 45) {
+    tips.push(
+      "Nimm dir heute extra Zeit zum Aufwärmen – Gelenke danken es dir.",
+    );
+  }
+  if (profile.limitations.trim()) {
+    tips.push(
+      `Beachte deine Einschränkung (${profile.limitations.trim()}) – bei Schmerz sofort abbrechen.`,
+    );
+  }
+  if (profile.trainingDaysPerWeek && profile.trainingDaysPerWeek >= 5) {
+    tips.push(
+      "Bei 5+ Einheiten/Woche zählt Erholung: Schlaf und Protein im Blick behalten.",
+    );
+  }
+  if (profile.goal === "strength") {
+    tips.push("Kraftfokus: lieber sauberere, schwere Sätze als viele Wdh.");
+  }
+  return tips;
+}
+
+// Prüft, ob das Equipment einer Übung mit dem verfügbaren Equipment passt.
+// Leere availableEquipment-Liste = alles verfügbar.
+export function hasEquipment(
+  profile: CoachProfile,
+  equipmentSlug: string | null,
+): boolean {
+  const avail = profile.availableEquipment
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (avail.length === 0) return true;
+  if (!equipmentSlug) return true; // Körpergewicht o. Ä.
+  return avail.includes(equipmentSlug);
+}
+
+/* ---------------- RPE-Hilfen ---------------- */
+
+// Kurzbeschreibung eines RPE-Werts für die UI.
+export function rpeLabel(rpe: number): string {
+  if (rpe >= 10) return "Maximal – keine Wdh mehr möglich";
+  if (rpe >= 9) return "Sehr schwer – 1 Wdh in Reserve";
+  if (rpe >= 8) return "Schwer – 2 Wdh in Reserve";
+  if (rpe >= 7) return "Fordernd – 3 Wdh in Reserve";
+  return "Leicht – viel Reserve";
 }

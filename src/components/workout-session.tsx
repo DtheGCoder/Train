@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   Check,
   Plus,
@@ -23,6 +23,7 @@ import {
   autoregulate,
   liveReaction,
   repsForWeight,
+  recommendedRest,
 } from "@/lib/coach";
 import {
   updateSet,
@@ -82,6 +83,9 @@ export function WorkoutSession({
   const [restKey, setRestKey] = useState(0);
   const [, startTransition] = useTransition();
   const [isFinishing, setIsFinishing] = useState(false);
+  // Letzter getippter RPE-Wert je Satz (synchron, damit das Abhaken den
+  // gerade eingegebenen Wert auswertet, bevor der State-Re-Render greift).
+  const rpeRef = useRef<Record<string, number | null>>({});
 
   useEffect(() => {
     const start = new Date(initial.startedAt).getTime();
@@ -169,18 +173,20 @@ export function WorkoutSession({
 
   const toggleComplete = (ex: ExState, s: SetState) => {
     const next = !s.isCompleted;
-    patchSet(ex.id, s.id, { isCompleted: next });
+    // Frisch getippten RPE bevorzugen (Ref ist synchron), sonst State-Wert.
+    const rpe = s.id in rpeRef.current ? rpeRef.current[s.id] : s.rpe;
+    patchSet(ex.id, s.id, next ? { isCompleted: next, rpe } : { isCompleted: next });
     if (next) {
       // Coach wertet den Satz aus (Grenze ggf. nach oben verschieben).
       const priorE1RM = liveE1RM(ex);
       const adj = autoregulate(
-        { weight: s.weight, reps: s.reps, rpe: s.rpe },
+        { weight: s.weight, reps: s.reps, rpe },
         priorE1RM,
         coach.profile,
       );
       setReaction(ex.id, { tone: adj.tone, message: adj.message });
-      // Rest-Timer starten (Standard 90s)
-      setRestSeconds(90);
+      // Rest-Timer mit vom Coach empfohlener Pause (Ziel/Stil-abhängig).
+      setRestSeconds(recommendedRest(coach.profile));
       setRestKey((k) => k + 1);
     }
   };
@@ -341,9 +347,9 @@ export function WorkoutSession({
               {/* Spaltenkopf */}
               <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_3rem] items-center gap-2 px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted">
                 <span>Satz</span>
-                <span className="text-center">Vorher</span>
                 <span className="text-center">kg</span>
                 <span className="text-center">Wdh.</span>
+                <span className="text-center">RPE</span>
                 <span className="text-center">✓</span>
               </div>
 
@@ -371,10 +377,6 @@ export function WorkoutSession({
                       {setTypeShort[s.setType] || s.setNumber}
                     </button>
 
-                    <span className="text-center text-xs text-muted">
-                      {p ? `${p.weight}×${p.reps}` : "–"}
-                    </span>
-
                     <input
                       type="number"
                       inputMode="decimal"
@@ -398,6 +400,31 @@ export function WorkoutSession({
                         })
                       }
                       className="h-10 w-full rounded-md border border-border bg-surface-2 px-2 text-center text-base outline-none focus:border-primary"
+                    />
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.5"
+                      min={1}
+                      max={10}
+                      defaultValue={s.rpe ?? ""}
+                      placeholder="–"
+                      title="RPE: gefühlte Anstrengung 1–10 (optional). Hilft dem Coach, die Last anzupassen."
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        rpeRef.current[s.id] = Number.isFinite(v)
+                          ? Math.min(10, Math.max(1, v))
+                          : null;
+                      }}
+                      onBlur={(e) => {
+                        const v = parseFloat(e.target.value);
+                        patchSet(ex.id, s.id, {
+                          rpe: Number.isFinite(v)
+                            ? Math.min(10, Math.max(1, v))
+                            : null,
+                        });
+                      }}
+                      className="h-10 w-full rounded-md border border-border bg-surface-2 px-1 text-center text-base outline-none focus:border-primary placeholder:text-muted/50"
                     />
 
                     <button

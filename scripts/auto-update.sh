@@ -28,12 +28,25 @@ echo "[$(date -Is)] Update gefunden: $LOCAL -> $REMOTE. Aktualisiere…"
 # Sauberer Stand: lokale Änderungen verwerfen, auf Remote setzen.
 git reset --hard "origin/$BRANCH"
 
+# .env in die Umgebung laden (DATABASE_URL & ADMIN_PASSWORD für Seed/Prisma).
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . ./.env
+  set +a
+fi
+
 echo "[$(date -Is)] npm ci"
 npm ci
 
 echo "[$(date -Is)] prisma generate + migrate deploy"
 npx prisma generate
 npx prisma migrate deploy
+
+# Seed idempotent nachziehen (legt fehlende Übungen/Presets/Admin in der
+# RICHTIGEN DB an; überspringt vorhandene Daten).
+echo "[$(date -Is)] db:seed (idempotent)"
+npm run db:seed || echo "[$(date -Is)] Seed übersprungen/fehlgeschlagen – fortfahren."
 
 echo "[$(date -Is)] build"
 export GIT_COMMIT="$(git rev-parse HEAD)"

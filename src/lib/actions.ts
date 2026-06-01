@@ -363,7 +363,13 @@ export async function resetAllData() {
 
 /* ---------------- Coach-Profil ---------------- */
 
-export async function updateCoachProfile(formData: FormData) {
+// Feedback-State für das Coach-Profil-Formular (useActionState im Client).
+export type CoachProfileState = { ok?: boolean; error?: string } | undefined;
+
+export async function updateCoachProfile(
+  _prevState: CoachProfileState,
+  formData: FormData,
+): Promise<CoachProfileState> {
   const str = (k: string) => String(formData.get(k) ?? "").trim();
   const num = (k: string) => {
     const v = parseFloat(str(k).replace(",", "."));
@@ -373,32 +379,46 @@ export async function updateCoachProfile(formData: FormData) {
     const v = parseInt(str(k), 10);
     return Number.isFinite(v) ? v : null;
   };
+  // Trainingstage pro Woche auf 1–7 begrenzen (null = keine Angabe).
+  const days = (() => {
+    const v = int("trainingDaysPerWeek");
+    if (v == null) return null;
+    return Math.min(7, Math.max(1, v));
+  })();
+  // Multi-Select Equipment: alle ausgewählten Slugs als CSV speichern.
+  const equipment = formData
+    .getAll("availableEquipment")
+    .map((v) => String(v).trim())
+    .filter(Boolean)
+    .join(",");
 
-  await db.settings.upsert({
-    where: { id: "singleton" },
-    update: {
-      goal: str("goal") || "hypertrophy",
-      experience: str("experience") || "intermediate",
-      coachStyle: str("coachStyle") || "balanced",
-      sex: str("sex"),
-      birthYear: int("birthYear"),
-      bodyweightKg: num("bodyweightKg"),
-      heightCm: num("heightCm"),
-    },
-    create: {
-      id: "singleton",
-      goal: str("goal") || "hypertrophy",
-      experience: str("experience") || "intermediate",
-      coachStyle: str("coachStyle") || "balanced",
-      sex: str("sex"),
-      birthYear: int("birthYear"),
-      bodyweightKg: num("bodyweightKg"),
-      heightCm: num("heightCm"),
-    },
-  });
+  const data = {
+    goal: str("goal") || "hypertrophy",
+    experience: str("experience") || "intermediate",
+    coachStyle: str("coachStyle") || "balanced",
+    sex: str("sex"),
+    birthYear: int("birthYear"),
+    bodyweightKg: num("bodyweightKg"),
+    heightCm: num("heightCm"),
+    trainingDaysPerWeek: days,
+    limitations: str("limitations"),
+    availableEquipment: equipment,
+    preferredRepStyle: str("preferredRepStyle") || "auto",
+  };
+
+  try {
+    await db.settings.upsert({
+      where: { id: "singleton" },
+      update: data,
+      create: { id: "singleton", ...data },
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Speichern fehlgeschlagen." };
+  }
 
   revalidatePath("/profile");
   revalidatePath("/");
+  return { ok: true };
 }
 
 export async function deleteRoutine(id: string) {

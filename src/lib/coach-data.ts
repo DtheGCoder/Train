@@ -4,6 +4,7 @@ import {
   type Goal,
   type Experience,
   type CoachStyle,
+  type RepStyle,
   DEFAULT_PROFILE,
 } from "@/lib/coach";
 
@@ -19,5 +20,9 @@ export async function loadCoachProfile(): Promise<CoachProfile> {
     heightCm: s.heightCm ?? null,
     birthYear: s.birthYear ?? null,
     sex: s.sex ?? "",
+    trainingDaysPerWeek: s.trainingDaysPerWeek ?? null,
+    limitations: s.limitations ?? "",
+    availableEquipment: s.availableEquipment ?? "",
+    preferredRepStyle: (s.preferredRepStyle as RepStyle) || "auto",
   };
 }
