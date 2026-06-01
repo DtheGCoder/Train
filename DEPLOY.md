@@ -88,59 +88,66 @@ sudo certbot --nginx -d deine-domain.de
 ## 6. Voll-automatisches Update einrichten
 
 Das Skript `scripts/auto-update.sh` prüft GitHub und aktualisiert bei neuem
-Commit automatisch (pull → install → migrate → build → `pm2 reload`).
+Commit automatisch (pull → install → migrate → build → `pm2 reload`). Es
+schreibt **immer** ein Log nach `logs/auto-update.log` und sichert PATH/nvm so
+ab, dass es auch unter cron/systemd zuverlässig läuft.
 
-### Variante A: cron (einfach)
+### Empfohlen: systemd-Timer per Installer
+
+```bash
+sudo bash scripts/install-autoupdate.sh
+```
+
+Der Installer legt `train-update.service` + `.timer` an, aktiviert sie und
+lässt das Update als den **richtigen User** laufen (Eigentümer des
+Projektordners – wichtig, damit nvm/PATH stimmen). Überschreibbar:
+
+```bash
+sudo RUN_AS=deploy bash scripts/install-autoupdate.sh
+```
+
+Prüfen & sofort testen:
+
+```bash
+systemctl list-timers train-update.timer      # nächste Läufe
+sudo systemctl start train-update.service      # einmal jetzt ausführen
+journalctl -u train-update.service -n 50 --no-pager
+tail -n 50 logs/auto-update.log
+```
+
+### Alternative: cron
 
 ```bash
 crontab -e
 ```
 
-Zeile hinzufügen (Prüfung alle 5 Minuten, mit Lock gegen Überlappung):
+Zeile hinzufügen (alle 5 Minuten, mit Lock gegen Überlappung). Das Skript
+loggt selbst – **keine** `>>`-Umleitung nötig (die scheitert, wenn `logs/`
+noch fehlt):
 
 ```
-*/5 * * * * /usr/bin/flock -n /tmp/train-update.lock /var/www/train/scripts/auto-update.sh >> /var/www/train/logs/auto-update.log 2>&1
-```
-
-### Variante B: systemd-Timer
-
-`/etc/systemd/system/train-update.service`:
-
-```ini
-[Unit]
-Description=Train auto-update from GitHub
-
-[Service]
-Type=oneshot
-WorkingDirectory=/var/www/train
-ExecStart=/var/www/train/scripts/auto-update.sh
-User=www-data
-```
-
-`/etc/systemd/system/train-update.timer`:
-
-```ini
-[Unit]
-Description=Run Train auto-update every 5 minutes
-
-[Timer]
-OnBootSec=2min
-OnUnitActiveSec=5min
-
-[Install]
-WantedBy=timers.target
-```
-
-Aktivieren:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now train-update.timer
+*/5 * * * * /usr/bin/flock -n /tmp/train-update.lock /var/www/train/scripts/auto-update.sh
 ```
 
 > Hinweis: Auto-Update führt Code aus GitHub aus, sobald dort ein neuer Commit
 > liegt. Stelle sicher, dass nur vertrauenswürdige Personen Push-Rechte auf das
 > Repository haben.
+
+### Troubleshooting: „Es passiert nichts"
+
+1. **Läuft der Timer überhaupt?**
+   `systemctl list-timers train-update.timer` – steht dort ein „NEXT"?
+   Sonst Installer (oben) ausführen.
+2. **Was sagt das Log?**
+   `tail -n 50 logs/auto-update.log` bzw.
+   `journalctl -u train-update.service -n 50 --no-pager`.
+3. **`npm/npx/pm2: command not found`** → Node via nvm, aber falscher User.
+   Den Installer mit `RUN_AS=<dein-user>` neu ausführen.
+4. **`detected dubious ownership in repository`** → Repo gehört einem anderen
+   User. Fix: `git config --global --add safe.directory /var/www/train`
+   (das Skript macht das jetzt automatisch).
+5. **Manuell prüfen, ob ein Update erkannt wird:**
+   `bash scripts/auto-update.sh && tail -n 30 logs/auto-update.log`.
 
 ## 7. Nützliche Befehle
 
