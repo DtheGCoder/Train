@@ -78,8 +78,11 @@ if [ -f .env ]; then
   set +a
 fi
 
-echo "[$(date -Is)] npm ci"
-npm ci
+# WICHTIG: --include=dev erzwingt devDependencies. Die .env oben setzt
+# NODE_ENV=production; ohne das Flag ließe npm ci tsx, tailwind &
+# @tailwindcss/postcss weg -> Seed (tsx) und next build (postcss) schlagen fehl.
+echo "[$(date -Is)] npm ci (inkl. devDependencies für Build/Seed)"
+npm ci --include=dev
 
 echo "[$(date -Is)] prisma generate + migrate deploy"
 npx prisma generate

@@ -22,8 +22,11 @@ set +a
 echo "==> .env geladen (DATABASE_URL=${DATABASE_URL:-nicht gesetzt})"
 
 # 2) Abhängigkeiten installieren (inkl. native better-sqlite3 Neukompilierung)
-echo "==> npm ci"
-npm ci
+# WICHTIG: --include=dev erzwingt devDependencies. Die .env oben setzt
+# NODE_ENV=production; ohne das Flag ließe npm ci tsx, tailwind & @tailwindcss/
+# postcss weg -> Seed (tsx) und next build (postcss) schlagen fehl.
+echo "==> npm ci (inkl. devDependencies für Build/Seed)"
+npm ci --include=dev
 
 # 3) Prisma-Client erzeugen + Migrationen anwenden
 echo "==> Prisma generate + migrate deploy"
