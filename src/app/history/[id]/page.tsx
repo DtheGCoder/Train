@@ -44,7 +44,7 @@ export default async function WorkoutDetail({
   return (
     <div className="space-y-5">
       <Link
-        href="/history"
+        href="/calendar"
         className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground"
       >
         <ArrowLeft className="size-4" /> Verlauf

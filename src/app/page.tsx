@@ -117,7 +117,7 @@ export default async function Home() {
       <div>
         <div className="mb-2 flex items-center justify-between">
           <h2 className="font-semibold">Letzte Workouts</h2>
-          <Link href="/history" className="text-sm text-primary">
+          <Link href="/calendar" className="text-sm text-primary">
             Verlauf
           </Link>
         </div>

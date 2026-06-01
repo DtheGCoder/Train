@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Dumbbell,
-  History,
+  Trophy,
   LayoutList,
   BarChart3,
   Play,
@@ -23,7 +23,7 @@ const items = [
   { href: "/exercises", label: "Übungen", icon: Dumbbell },
   { href: "/routines", label: "Pläne", icon: LayoutList },
   { href: "/calendar", label: "Kalender", icon: CalendarDays },
-  { href: "/history", label: "Verlauf", icon: History },
+  { href: "/leaderboard", label: "Bestenliste", icon: Trophy },
   { href: "/stats", label: "Statistik", icon: BarChart3 },
   { href: "/analysis", label: "Analyse", icon: Activity },
 ];
