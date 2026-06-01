@@ -18,6 +18,7 @@ import {
   Timer,
   Dumbbell,
   Flag,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { ExerciseBrowser, type ExerciseItem } from "@/components/exercise-browser";
@@ -101,6 +102,11 @@ export function WorkoutSession({
   // Letzter getippter RPE-Wert je Satz (synchron, damit das Abhaken den
   // gerade eingegebenen Wert auswertet, bevor der State-Re-Render greift).
   const rpeRef = useRef<Record<string, number | null>>({});
+  // IDs frisch hinzugefügter Sätze/Übungen, die beim Erscheinen einblenden
+  // sollen (Reveal). Bewusst nur das EXPLIZIT Hinzugefügte: bei einer neuen
+  // Übung animiert die Karte als Ganzes, nicht zusätzlich jede Zeile darin.
+  const [animSetIds, setAnimSetIds] = useState<Set<string>>(() => new Set());
+  const [animExIds, setAnimExIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     const start = new Date(initial.startedAt).getTime();
@@ -277,6 +283,7 @@ export function WorkoutSession({
   const handleAddSet = (ex: ExState) => {
     startTransition(async () => {
       const created = await addSet(ex.id);
+      setAnimSetIds((prev) => new Set(prev).add(created.id));
       setExercises((prev) =>
         prev.map((e) =>
           e.id !== ex.id
@@ -325,6 +332,7 @@ export function WorkoutSession({
     setShowPicker(false);
     startTransition(async () => {
       const created = await addExerciseToWorkout(initial.id, item.id);
+      setAnimExIds((prev) => new Set(prev).add(created.id));
       setExercises((prev) => [
         ...prev,
         {
@@ -347,10 +355,14 @@ export function WorkoutSession({
   };
 
   const handleFinish = () => {
+    if (isFinishing) return;
     setIsFinishing(true);
-    startTransition(async () => {
-      await finishWorkout(initial.id);
-    });
+    // Erst die Abschluss-Feier zeigen, dann speichern & weiterleiten.
+    window.setTimeout(() => {
+      startTransition(async () => {
+        await finishWorkout(initial.id);
+      });
+    }, 1200);
   };
 
   const handleDiscard = () => {
@@ -362,6 +374,15 @@ export function WorkoutSession({
 
   return (
     <div className="space-y-4 pb-28">
+      {/* Abschluss-Feier */}
+      {isFinishing && (
+        <FinishOverlay
+          durationLabel={formatDuration(elapsed)}
+          volume={stats.volume}
+          sets={stats.completedSets}
+        />
+      )}
+
       {/* Kopf mit Live-Stats */}
       <div className="sticky top-0 z-20 -mx-4 -mt-[env(safe-area-inset-top)] border-b border-border bg-background/95 px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] backdrop-blur">
         <div className="flex items-center justify-between gap-3">
@@ -395,7 +416,8 @@ export function WorkoutSession({
         const exDone = setsPlanned > 0 && setsDone === setsPlanned;
         const nextName = exDone ? (nextOpenExercise(ex.id)?.name ?? null) : null;
         return (
-          <div key={ex.id} className="rounded-xl border border-border bg-surface">
+          <Reveal key={ex.id} animate={animExIds.has(ex.id)}>
+          <div className="rounded-xl border border-border bg-surface">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <div className="min-w-0">
                 <p className="font-semibold">{ex.name}</p>
@@ -445,8 +467,8 @@ export function WorkoutSession({
               {ex.sets.map((s, i) => {
                 const p = prev?.[i];
                 return (
+                  <Reveal key={s.id} animate={animSetIds.has(s.id)}>
                   <SwipeRow
-                    key={s.id}
                     onDelete={() => handleDeleteSet(ex, s.id)}
                     completed={s.isCompleted}
                   >
@@ -529,6 +551,7 @@ export function WorkoutSession({
                     </button>
                     </div>
                   </SwipeRow>
+                  </Reveal>
                 );
               })}
 
@@ -559,6 +582,7 @@ export function WorkoutSession({
               </div>
             </div>
           </div>
+          </Reveal>
         );
       })}
 
@@ -611,6 +635,167 @@ export function WorkoutSession({
 
 function Minus() {
   return <span className="text-lg leading-none">−</span>;
+}
+
+// Sanftes Einblenden für frisch hinzugefügte Sätze/Übungen: Höhe fährt von 0
+// auf, dazu Fade + leichtes Hochgleiten. `animate=false` (vorhandene Elemente
+// beim Laden) rendert ohne Animation. Respektiert prefers-reduced-motion.
+function Reveal({
+  children,
+  animate,
+  duration = 320,
+}: {
+  children: ReactNode;
+  animate: boolean;
+  duration?: number;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(!animate);
+  const [maxH, setMaxH] = useState<number | undefined>(animate ? 0 : undefined);
+
+  useEffect(() => {
+    if (!animate) return;
+    const reduce =
+      typeof window !== "undefined" &&
+      !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const el = ref.current;
+    const target = el ? el.scrollHeight : 0;
+    // Im nächsten Frame öffnen, damit der 0-Startzustand sicher greift.
+    const raf = requestAnimationFrame(() => {
+      if (reduce) {
+        setMaxH(undefined);
+        setOpen(true);
+        return;
+      }
+      setMaxH(target);
+      setOpen(true);
+    });
+    // Nach der Animation auf „auto" freigeben (dynamische Inhalte/Größen).
+    const t = window.setTimeout(
+      () => setMaxH(undefined),
+      reduce ? 0 : duration + 60,
+    );
+    return () => {
+      cancelAnimationFrame(raf);
+      window.clearTimeout(t);
+    };
+  }, [animate, duration]);
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        maxHeight: maxH,
+        opacity: open ? 1 : 0,
+        transform: open ? "none" : "translateY(-6px) scale(0.98)",
+        overflow: maxH === undefined ? undefined : "hidden",
+        transition: animate
+          ? `max-height ${duration}ms cubic-bezier(0.22,1,0.36,1), opacity ${duration}ms ease, transform ${duration}ms cubic-bezier(0.22,1,0.36,1)`
+          : undefined,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// Vollbild-Feier beim Abschließen eines Workouts: aufploppender Erfolgs-Haken
+// mit Ringen, Konfetti und einer kurzen Statistik – danach wird gespeichert
+// und auf die Verlaufsseite weitergeleitet.
+function FinishOverlay({
+  durationLabel,
+  volume,
+  sets,
+}: {
+  durationLabel: string;
+  volume: number;
+  sets: number;
+}) {
+  const pieces = useMemo(() => {
+    const colors = [
+      "#6366f1",
+      "#22c55e",
+      "#f59e0b",
+      "#ef4444",
+      "#3b82f6",
+      "#ec4899",
+    ];
+    // Deterministischer Pseudo-Zufall (sin-Hash) – stabil über Re-Renders und
+    // ohne Math.random (rein, lint-konform), liefert aber gut gestreute Werte.
+    const rand = (i: number, seed: number) => {
+      const x = Math.sin(i * 12.9898 + seed * 78.233) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    return Array.from({ length: 20 }, (_, i) => ({
+      left: rand(i, 1) * 100,
+      delay: rand(i, 2) * 0.35,
+      duration: 1 + rand(i, 3) * 0.9,
+      color: colors[i % colors.length],
+      size: 6 + rand(i, 4) * 6,
+    }));
+  }, []);
+
+  return (
+    <div className="finish-overlay fixed inset-0 z-[60] flex flex-col items-center justify-center bg-background/92 px-6 backdrop-blur-sm">
+      {/* Konfetti */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {pieces.map((p, i) => (
+          <span
+            key={i}
+            className="finish-confetti absolute top-0 rounded-[2px]"
+            style={{
+              left: `${p.left}%`,
+              width: `${p.size}px`,
+              height: `${p.size * 1.4}px`,
+              background: p.color,
+              animationDelay: `${p.delay}s`,
+              animationDuration: `${p.duration}s`,
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Erfolgs-Haken mit Ringen */}
+      <div className="relative flex size-28 items-center justify-center">
+        <span className="absolute inline-flex size-full animate-ping rounded-full bg-success/30" />
+        <span className="absolute inline-flex size-20 rounded-full bg-success/15" />
+        <div className="finish-pop relative flex size-24 items-center justify-center rounded-full bg-success text-white shadow-lg shadow-success/40">
+          <Check className="size-12" strokeWidth={3} />
+        </div>
+      </div>
+
+      <div
+        className="finish-rise mt-6 text-center"
+        style={{ animationDelay: "0.12s" }}
+      >
+        <p className="text-2xl font-bold">Geschafft! 💪</p>
+        <p className="mt-1 text-sm text-muted">Workout abgeschlossen</p>
+
+        <div className="mt-5 flex items-center justify-center gap-6 text-sm">
+          <div>
+            <p className="text-lg font-bold tabular-nums">{durationLabel}</p>
+            <p className="text-xs text-muted">Dauer</p>
+          </div>
+          <div className="h-8 w-px bg-border" />
+          <div>
+            <p className="text-lg font-bold tabular-nums">
+              {Math.round(volume)} kg
+            </p>
+            <p className="text-xs text-muted">Volumen</p>
+          </div>
+          <div className="h-8 w-px bg-border" />
+          <div>
+            <p className="text-lg font-bold tabular-nums">{sets}</p>
+            <p className="text-xs text-muted">Sätze</p>
+          </div>
+        </div>
+
+        <p className="mt-6 inline-flex items-center gap-2 text-xs text-muted">
+          <Loader2 className="size-3.5 animate-spin" /> wird gespeichert…
+        </p>
+      </div>
+    </div>
+  );
 }
 
 // Wischbare Satz-Zeile: nach links ziehen, um den Satz zu löschen.
