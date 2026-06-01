@@ -478,6 +478,81 @@ export async function deleteRoutine(id: string) {
   redirect("/routines");
 }
 
+/* ---------------- Community-Vorlagen ---------------- */
+
+// Eigene, selbst erstellte Vorlage für die Community freigeben oder zurückziehen.
+// Presets (System-Vorlagen) können niemals freigegeben werden.
+export async function setRoutineVisibility(
+  routineId: string,
+  isPublic: boolean,
+) {
+  const user = await requireUser();
+  await db.routine.updateMany({
+    where: { id: routineId, userId: user.id, isPreset: false },
+    data: { isPublic },
+  });
+  revalidatePath("/routines");
+  revalidatePath("/community");
+  revalidatePath(`/routines/${routineId}`);
+}
+
+// Öffentliche Community-Vorlage in den eigenen Account übernehmen.
+// Es wird nur die Struktur kopiert (keine Trainingsdaten). Übungen werden
+// über den Namen auf den eigenen, pro Nutzer provisionierten Katalog gemappt.
+export async function cloneRoutine(routineId: string) {
+  const user = await requireUser();
+
+  // Nur freigegebene Nutzer-Vorlagen (keine Presets) sind klonbar.
+  const src = await db.routine.findFirst({
+    where: { id: routineId, isPublic: true, isPreset: false },
+    include: {
+      exercises: {
+        orderBy: { position: "asc" },
+        include: { exercise: { select: { nameDe: true } } },
+      },
+    },
+  });
+  if (!src) throw new Error("Vorlage nicht gefunden.");
+
+  // Übungen des aktuellen Nutzers nach Name indexieren (Übungen sind pro Nutzer).
+  const myExercises = await db.exercise.findMany({
+    where: { userId: user.id },
+    select: { id: true, nameDe: true },
+  });
+  const byName = new Map(myExercises.map((e) => [e.nameDe, e.id]));
+
+  const routine = await db.routine.create({
+    data: {
+      name: src.name,
+      description: src.description || "Aus Community-Vorlage übernommen",
+      color: src.color,
+      userId: user.id,
+      // Klone bleiben privat und sind keine Presets.
+    },
+  });
+
+  let position = 0;
+  for (const re of src.exercises) {
+    const targetId = byName.get(re.exercise.nameDe);
+    if (!targetId) continue; // Übung nicht im eigenen Katalog -> überspringen
+    await db.routineExercise.create({
+      data: {
+        routineId: routine.id,
+        exerciseId: targetId,
+        position: position++,
+        targetSets: re.targetSets,
+        targetReps: re.targetReps,
+        targetRestSec: re.targetRestSec,
+        notes: re.notes,
+        supersetGroup: re.supersetGroup,
+      },
+    });
+  }
+
+  revalidatePath("/routines");
+  redirect(`/routines/${routine.id}`);
+}
+
 export async function addRoutineExercise(
   routineId: string,
   exerciseId: string,

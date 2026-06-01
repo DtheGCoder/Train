@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { RoutineEditor } from "@/components/routine-editor";
+import { RoutineShareToggle } from "@/components/routine-share-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,14 @@ export default async function RoutineDetail({
         muscles={muscles.map((m) => ({ slug: m.slug, name: m.nameDe }))}
         equipment={equipment.map((e) => ({ slug: e.slug, name: e.nameDe }))}
       />
+
+      {/* Eigene Vorlagen für die Community freigeben (keine System-Vorlagen). */}
+      {!routine.isPreset && (
+        <RoutineShareToggle
+          routineId={routine.id}
+          initialPublic={routine.isPublic}
+        />
+      )}
     </div>
   );
 }

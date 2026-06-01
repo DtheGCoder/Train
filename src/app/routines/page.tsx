@@ -1,9 +1,9 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
-import { ChevronRight, Plus, Sparkles } from "lucide-react";
+import { ChevronRight, Plus, Sparkles, Globe, Users, Download } from "lucide-react";
 import { PageHeader, Card, Input, Button, EmptyState } from "@/components/ui";
-import { createRoutine } from "@/lib/actions";
+import { createRoutine, cloneRoutine } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +12,11 @@ type RoutineRow = {
   name: string;
   description: string;
   color: string;
+  isPublic?: boolean;
   _count: { exercises: number };
 };
+
+type CommunityRow = RoutineRow & { author: string };
 
 function RoutineList({ routines }: { routines: RoutineRow[] }) {
   return (
@@ -30,7 +33,12 @@ function RoutineList({ routines }: { routines: RoutineRow[] }) {
                 style={{ background: r.color }}
               />
               <div className="min-w-0">
-                <p className="font-medium">{r.name}</p>
+                <p className="flex items-center gap-1.5 font-medium">
+                  {r.name}
+                  {r.isPublic && (
+                    <Globe className="size-3.5 shrink-0 text-success" />
+                  )}
+                </p>
                 <p className="truncate text-xs text-muted">
                   {r._count.exercises} Übungen
                   {r.description ? ` · ${r.description}` : ""}
@@ -45,16 +53,68 @@ function RoutineList({ routines }: { routines: RoutineRow[] }) {
   );
 }
 
+function CommunityList({ routines }: { routines: CommunityRow[] }) {
+  return (
+    <ul className="space-y-2">
+      {routines.map((r) => (
+        <li
+          key={r.id}
+          className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <span
+              className="size-3 shrink-0 rounded-full"
+              style={{ background: r.color }}
+            />
+            <div className="min-w-0">
+              <p className="truncate font-medium">{r.name}</p>
+              <p className="truncate text-xs text-muted">
+                {r._count.exercises} Übungen · von {r.author}
+                {r.description ? ` · ${r.description}` : ""}
+              </p>
+            </div>
+          </div>
+          <form action={cloneRoutine.bind(null, r.id)} className="shrink-0">
+            <Button type="submit" variant="secondary">
+              <Download className="size-4" /> Übernehmen
+            </Button>
+          </form>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default async function RoutinesPage() {
   const user = await requireUser();
-  const routines = await db.routine.findMany({
-    where: { userId: user.id },
-    orderBy: { updatedAt: "desc" },
-    include: { _count: { select: { exercises: true } } },
-  });
+  const [routines, communityRaw] = await Promise.all([
+    db.routine.findMany({
+      where: { userId: user.id },
+      orderBy: { updatedAt: "desc" },
+      include: { _count: { select: { exercises: true } } },
+    }),
+    // Öffentliche, selbst erstellte Vorlagen anderer Nutzer (keine Presets).
+    db.routine.findMany({
+      where: { isPublic: true, isPreset: false, userId: { not: user.id } },
+      orderBy: { updatedAt: "desc" },
+      take: 50,
+      include: {
+        _count: { select: { exercises: true } },
+        user: { select: { username: true } },
+      },
+    }),
+  ]);
 
   const presets = routines.filter((r) => r.isPreset);
   const custom = routines.filter((r) => !r.isPreset);
+  const community: CommunityRow[] = communityRaw.map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    color: r.color,
+    _count: r._count,
+    author: r.user?.username ?? "unbekannt",
+  }));
 
   return (
     <div className="space-y-5">
@@ -92,6 +152,20 @@ export default async function RoutinesPage() {
           />
         ) : (
           <RoutineList routines={custom} />
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted">
+          <Users className="size-4 text-primary" /> Community-Vorlagen
+        </h2>
+        {community.length === 0 ? (
+          <p className="text-sm text-muted">
+            Noch keine geteilten Vorlagen. Gib eigene Pläne über den Schalter im
+            Plan frei, damit andere sie nutzen können.
+          </p>
+        ) : (
+          <CommunityList routines={community} />
         )}
       </section>
     </div>
