@@ -18,9 +18,13 @@ import { setTypeLabels, setTypeShort } from "@/lib/labels";
 import { formatDuration, cn } from "@/lib/utils";
 import {
   type CoachProfile,
+  type ExerciseHistory,
+  type SessionState,
   bestE1RM,
   recommendSet,
-  autoregulate,
+  recommendNextSet,
+  coachAfterSet,
+  analyzeExerciseHistory,
   liveReaction,
   repsForWeight,
   recommendedRest,
@@ -63,6 +67,7 @@ const setTypeCycle = ["normal", "warmup", "dropset", "failure"];
 export function WorkoutSession({
   initial,
   previous,
+  history = {},
   pickerItems,
   muscles,
   equipment,
@@ -70,6 +75,7 @@ export function WorkoutSession({
 }: {
   initial: Initial;
   previous: Record<string, { weight: number; reps: number }[]>;
+  history?: Record<string, ExerciseHistory>;
   pickerItems: ExerciseItem[];
   muscles: { slug: string; name: string }[];
   equipment: { slug: string; name: string }[];
@@ -172,9 +178,25 @@ export function WorkoutSession({
     return order.find((e) => !isExerciseDone(e)) ?? null;
   };
 
+  // Verlaufs-Auswertung (Trend/Plateau) je Übung.
+  const insightOf = (ex: ExState) => analyzeExerciseHistory(history[ex.exerciseId]);
+
+  // Aktueller Session-Zustand der Übung: bereits abgehakte Arbeitssätze
+  // (optional ohne einen bestimmten Satz, z. B. den gerade abgehakten).
+  const sessionStateOf = (ex: ExState, excludeSetId?: string): SessionState => {
+    const working = workingSetsOf(ex);
+    const completed = working
+      .filter((s) => s.isCompleted && s.id !== excludeSetId)
+      .map((s) => ({ weight: s.weight, reps: s.reps, rpe: s.rpe }));
+    return { completed, plannedSets: working.length };
+  };
+
   const reactToWeight = (ex: ExState, weight: number) => {
     if (weight <= 0) return;
-    const r = liveReaction(weight, liveE1RM(ex), coach.profile);
+    const r = liveReaction(weight, liveE1RM(ex), coach.profile, {
+      state: sessionStateOf(ex),
+      insight: insightOf(ex),
+    });
     if (r) setReaction(ex.id, r);
   };
 
@@ -220,12 +242,14 @@ export function WorkoutSession({
           setRestKey((k) => k + 1);
         }
       } else {
-        // Coach wertet den Satz aus (Grenze ggf. nach oben verschieben).
+        // Coach wertet den Satz im Kontext aus: Verlauf (Trend/Plateau) +
+        // bisherige Sätze dieser Einheit (Ermüdung), nicht stur „mehr".
         const priorE1RM = liveE1RM(ex);
-        const adj = autoregulate(
+        const adj = coachAfterSet(
           { weight: s.weight, reps: s.reps, rpe },
           priorE1RM,
           coach.profile,
+          { state: sessionStateOf(ex, s.id), insight: insightOf(ex) },
         );
         setReaction(ex.id, { tone: adj.tone, message: adj.message });
         // Rest-Timer mit vom Coach empfohlener Pause (Ziel/Stil-abhängig).
@@ -387,7 +411,10 @@ export function WorkoutSession({
 
             <div className="px-2 py-2">
               <CoachCard
-                rec={recommendSet(liveE1RM(ex), coach.profile)}
+                rec={recommendNextSet(liveE1RM(ex), coach.profile, {
+                  state: sessionStateOf(ex),
+                  insight: insightOf(ex),
+                })}
                 reaction={coachMsg[ex.id] ?? null}
                 oneRm={liveE1RM(ex)}
                 onLimitTest={() => handleLimitTest(ex)}

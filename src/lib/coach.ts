@@ -191,117 +191,347 @@ export function recommendSet(
   return { weight, reps, rir, intensityPct, hasBaseline: true };
 }
 
-/* ---------------- Autoregulation nach einem Satz ---------------- */
+/* ---------------- Kontext: Verlauf & Session-Zustand ---------------- */
+// Damit der Coach „mitdenkt" statt jeden Satz dasselbe zu sagen, bekommt er
+// zwei Kontexte: den Übungs-VERLAUF (vergangene Einheiten) und den aktuellen
+// SESSION-Zustand (was in dieser Einheit schon abgehakt wurde). Beides wird
+// serverseitig aus der DB geladen und live mitgeführt.
+
+// Eine vergangene Einheit dieser Übung (chronologisch aufsteigend geliefert).
+export type HistorySession = {
+  date: string; // ISO
+  bestE1RM: number; // bestes geschätztes 1RM dieser Einheit
+  topWeight: number; // schwerstes bewegtes Arbeitsgewicht
+  topReps: number; // Wdh beim schwersten Satz
+  workSets: number; // Anzahl Arbeitssätze
+};
+
+export type ExerciseHistory = { sessions: HistorySession[] };
+
+// Live-Zustand der Übung in DIESER Einheit (vor dem aktuellen Satz).
+export type SessionState = {
+  completed: SetLike[]; // bereits abgehakte Arbeitssätze, chronologisch
+  plannedSets: number; // geplante Arbeitssätze gesamt
+};
+
+export type HistoryStatus = "new" | "rising" | "flat" | "regressing" | "stalled";
+
+export type HistoryInsight = {
+  status: HistoryStatus;
+  lastBestE1RM: number;
+  prevBestE1RM: number;
+  sessionsSinceProgress: number; // Einheiten seit letztem Bestwert
+  changePct: number; // Veränderung letzte vs. vorletzte Einheit
+  sessionCount: number;
+};
+
+// Wertet den Verlauf einer Übung aus: steigt, stagniert, fällt oder Plateau?
+export function analyzeExerciseHistory(
+  history: ExerciseHistory | undefined,
+): HistoryInsight {
+  const s = history?.sessions ?? [];
+  if (s.length === 0) {
+    return {
+      status: "new",
+      lastBestE1RM: 0,
+      prevBestE1RM: 0,
+      sessionsSinceProgress: 0,
+      changePct: 0,
+      sessionCount: 0,
+    };
+  }
+  const last = s[s.length - 1];
+  const prev = s.length >= 2 ? s[s.length - 2] : null;
+  let best = 0;
+  let bestIdx = 0;
+  s.forEach((x, i) => {
+    if (x.bestE1RM > best) {
+      best = x.bestE1RM;
+      bestIdx = i;
+    }
+  });
+  const sessionsSinceProgress = s.length - 1 - bestIdx;
+  const changePct =
+    prev && prev.bestE1RM > 0
+      ? ((last.bestE1RM - prev.bestE1RM) / prev.bestE1RM) * 100
+      : 0;
+
+  let status: HistoryStatus;
+  if (s.length === 1) status = "new";
+  else if (changePct <= -2.5) status = "regressing";
+  else if (sessionsSinceProgress >= 3) status = "stalled";
+  else if (changePct >= 1.5) status = "rising";
+  else status = "flat";
+
+  return {
+    status,
+    lastBestE1RM: last.bestE1RM,
+    prevBestE1RM: prev?.bestE1RM ?? 0,
+    sessionsSinceProgress,
+    changePct,
+    sessionCount: s.length,
+  };
+}
+
+// Grobe innersatz-Ermüdung: ab dem 2. Arbeitssatz sinkt die Wdh-Kapazität.
+// (~0,6 Wdh je bereits absolviertem Arbeitssatz – konservativ.)
+function fatigueReps(completedSets: number): number {
+  return Math.floor(completedSets * 0.6);
+}
+
+// Deterministische Phrasen-Auswahl (variiert Wortlaut je Satz, ohne Zufall).
+function pick(arr: string[], seed: number): string {
+  return arr[((seed % arr.length) + arr.length) % arr.length];
+}
+
+/* ---------------- Empfehlung für den nächsten Satz (kontext-bewusst) ---------------- */
+
+// Plant den nächsten Arbeitssatz UNTER Berücksichtigung von Verlauf und bereits
+// absolvierten Sätzen dieser Einheit. Folgesätze halten das Gewicht und planen
+// wegen Ermüdung etwas weniger Wdh – statt stur weiter hochzurechnen.
+export function recommendNextSet(
+  oneRm: number,
+  profile: CoachProfile,
+  ctx: { state: SessionState; insight: HistoryInsight },
+): SetRecommendation {
+  const base = recommendSet(oneRm, profile);
+  if (!base.hasBaseline) return base;
+  const { state, insight } = ctx;
+  const tgt = targetReps(profile);
+  const repLow = GOAL_CONFIG[profile.goal].repLow;
+
+  // Erster Arbeitssatz: am Verlauf ausrichten.
+  if (state.completed.length === 0) {
+    if (insight.status === "regressing") {
+      // Nach rückläufigen Einheiten konservativ einsteigen (Technik vor Last).
+      const weight = roundToIncrement(base.weight * 0.975);
+      return {
+        ...base,
+        weight,
+        intensityPct: oneRm > 0 ? Math.round((weight / oneRm) * 100) : 0,
+      };
+    }
+    return base;
+  }
+
+  // Folgesätze: Gewicht des letzten Arbeitssatzes halten, Wdh-Ziel wegen
+  // Ermüdung leicht senken (nicht stur weiter steigern).
+  const lastSet = state.completed[state.completed.length - 1];
+  const weight = lastSet.weight > 0 ? lastSet.weight : base.weight;
+  const reps = Math.max(repLow, tgt - fatigueReps(state.completed.length));
+  return {
+    weight,
+    reps,
+    rir: base.rir,
+    intensityPct: oneRm > 0 ? Math.round((weight / oneRm) * 100) : 0,
+    hasBaseline: true,
+  };
+}
+
+/* ---------------- Auswertung nach einem Satz (kontext-bewusst) ---------------- */
 
 export type Adjustment = {
   nextWeight: number;
   nextReps: number;
   newE1RM: number; // ggf. nach oben verschoben
   pr: boolean; // neues geschätztes 1RM (Grenze verschoben)
-  tone: "push" | "hold" | "back" | "limit";
+  tone: "push" | "hold" | "back" | "limit" | "done";
   message: string;
 };
 
-// Wertet den gerade abgeschlossenen Satz aus und plant den nächsten.
-export function autoregulate(
+// Bewertet den gerade abgeschlossenen Satz und plant den nächsten – mit Blick
+// auf Satz-Nummer, Ermüdung in dieser Einheit und den Verlauf der Übung.
+// Wichtig: drängt NICHT bei jedem Satz „geh ans Limit". Ein Limit-/Mehrlast-
+// Vorschlag kommt nur dann, wenn er Sinn ergibt (frischer 1. Satz mit klarer
+// Reserve oder ein echtes Plateau, das man durchbrechen sollte).
+export function coachAfterSet(
   done: SetLike,
   oneRm: number,
   profile: CoachProfile,
+  ctx: { state: SessionState; insight: HistoryInsight },
 ): Adjustment {
+  const { state, insight } = ctx;
   const style = STYLE_CONFIG[profile.coachStyle];
-  const tgtReps = targetReps(profile);
+  const tgt = targetReps(profile);
   const achieved = e1rm(done.weight, done.reps);
   const newE1RM = Math.max(oneRm, achieved);
   const pr = achieved > oneRm + 0.01 && done.weight > 0;
   const step = 1 + effectiveStep(profile);
 
   const rpe = done.rpe ?? null;
-  const beatBy = done.reps - tgtReps;
-  const lightRpe = rpe !== null && rpe <= style.pushRpe - 1;
+  const beatBy = done.reps - tgt;
   const hardRpe = rpe !== null && rpe >= 9.5;
+  const toughRpe = rpe !== null && rpe >= style.pushRpe;
+  const easyRpe = rpe !== null && rpe <= style.pushRpe - 2;
 
-  // RPE dominiert, wenn vorhanden: ein sehr schwerer Satz (RPE ~10) trotz
-  // erreichter Wiederholungen heißt "Gewicht halten", nicht steigern.
-  if (rpe !== null && rpe >= 9.5 && done.weight > 0) {
+  const setNo = state.completed.length + 1; // dieser Arbeitssatz
+  const remaining = Math.max(0, state.plannedSets - setNo);
+  const isFirst = setNo === 1;
+  const hold = done.weight; // gleiches Gewicht
+
+  // Verlaufs-Zusatz nur beim 1. Satz (sonst wird's repetitiv).
+  let historyNote = "";
+  if (isFirst) {
+    if (insight.status === "rising")
+      historyNote = ` Dein Trend zeigt nach oben (+${Math.round(insight.changePct)}% zuletzt) — bestätige das.`;
+    else if (insight.status === "regressing")
+      historyNote = ` Die letzten Einheiten gingen leicht runter — heute nichts erzwingen, sauber arbeiten.`;
+    else if (insight.status === "stalled")
+      historyNote = ` Seit ${insight.sessionsSinceProgress} Einheiten kein neuer Bestwert — Zeit, das Plateau gezielt anzugreifen.`;
+  }
+
+  // 1) Neuer geschätzter Bestwert → feiern, danach Ermüdung respektieren.
+  if (pr) {
     return {
-      nextWeight: done.weight,
-      nextReps: tgtReps,
+      nextWeight: hold,
+      nextReps: tgt,
+      newE1RM,
+      pr: true,
+      tone: "push",
+      message:
+        `Neuer geschätzter Bestwert — ${done.weight} kg × ${done.reps}! ` +
+        (remaining > 0
+          ? `Folgesätze bei ${hold} kg halten, die Marke ist gesetzt.`
+          : `Stark beendet.`) +
+        historyNote,
+    };
+  }
+
+  // 2) Sehr schwer (RPE ≥ 9,5) → halten/zurücknehmen, niemals nachlegen.
+  if (hardRpe) {
+    if (remaining === 0) {
+      return {
+        nextWeight: hold,
+        nextReps: tgt,
+        newE1RM,
+        pr,
+        tone: "hold",
+        message: pick(
+          [
+            `RPE ${rpe} zum Abschluss — alles gegeben, genau richtig.`,
+            `Das war Maximaleinsatz (RPE ${rpe}). Sauberer Schlusspunkt.`,
+          ],
+          setNo,
+        ),
+      };
+    }
+    const lighter = roundToIncrement(done.weight * (1 - style.stepPct));
+    return {
+      nextWeight: lighter > 0 ? lighter : hold,
+      nextReps: tgt,
       newE1RM,
       pr,
       tone: "hold",
       message:
-        `RPE ${rpe} – das war fast alles. Beim nächsten Satz gleiches Gewicht ` +
-        `(${done.weight} kg) und sauber für ${tgtReps} Wdh halten.`,
+        `RPE ${rpe} – fast am Anschlag. Für die ${remaining} Restsätze ${hold} kg halten` +
+        (lighter < done.weight ? ` oder auf ${lighter} kg runter` : "") +
+        `, Form geht vor. Nicht erzwingen.`,
     };
   }
 
-  // Deutliche Reserve → Limit-Test anbieten.
-  if ((beatBy >= 2 || lightRpe) && done.weight > 0 && !hardRpe) {
-    const nextWeight = roundToIncrement(done.weight * step);
-    const prefix = pr ? "Neues geschätztes Maximum! " : "";
-    return {
-      nextWeight,
-      nextReps: tgtReps,
-      newE1RM,
-      pr,
-      tone: "limit",
-      message:
-        `${prefix}Da ist noch Luft — beim nächsten Satz ${nextWeight} kg. ` +
-        `Geh ans Limit und schau, wie weit du kommst.`,
-    };
-  }
-
-  // Im oder leicht über Ziel → leicht steigern.
-  if (beatBy >= 0 && !hardRpe && done.weight > 0) {
-    const nextWeight = roundToIncrement(done.weight * step);
-    if (nextWeight > done.weight) {
+  // 3) Frischer 1. Satz mit klarer Reserve → EINMALIG mehr Last anbieten.
+  //    (Nur hier wird „mehr" vorgeschlagen – nicht bei jedem Folgesatz.)
+  if (isFirst && (beatBy >= 3 || easyRpe) && done.weight > 0) {
+    const heavier = roundToIncrement(done.weight * step);
+    if (insight.status === "stalled") {
       return {
-        nextWeight,
-        nextReps: tgtReps,
+        nextWeight: heavier,
+        nextReps: Math.max(GOAL_CONFIG[profile.goal].repLow, tgt - 1),
         newE1RM,
         pr,
-        tone: "push",
+        tone: "limit",
         message:
-          `Sauber, ${done.reps} Wdh geschafft. Trau dich an ${nextWeight} kg — ` +
-          `ich glaub, die ${tgtReps} liegen drin.`,
+          `Locker mit Reserve — und das Plateau will gebrochen werden. ` +
+          `Nächster Satz ${heavier} kg, geh kontrolliert ans Limit.` +
+          historyNote,
       };
     }
     return {
-      nextWeight: done.weight,
-      nextReps: tgtReps,
+      nextWeight: heavier,
+      nextReps: tgt,
       newE1RM,
       pr,
-      tone: "hold",
-      message: `Im Zielbereich. Gewicht halten: ${done.weight} kg × ${tgtReps}.`,
+      tone: "push",
+      message:
+        pick(
+          [
+            `Satz 1 saß locker (${done.reps} Wdh). Leg auf ${heavier} kg nach.`,
+            `Da war klar Reserve. Trau dich an ${heavier} kg für die nächsten Sätze.`,
+          ],
+          setNo,
+        ) + historyNote,
     };
   }
 
-  // Knapp unter Ziel, aber sauber → Gewicht halten und nachlegen.
-  if (beatBy === -1 && !hardRpe && done.weight > 0) {
+  // 4) Im/über Ziel mit Reserve, aber kein frischer 1. Satz → Gewicht HALTEN.
+  //    Ermüdung über die Sätze ist normal und gewollt – nicht weiter hochjagen.
+  if (beatBy >= 0 && !toughRpe && done.weight > 0) {
     return {
-      nextWeight: done.weight,
-      nextReps: tgtReps,
+      nextWeight: hold,
+      nextReps: Math.max(
+        GOAL_CONFIG[profile.goal].repLow,
+        tgt - fatigueReps(setNo),
+      ),
       newE1RM,
       pr,
       tone: "hold",
-      message: `Knapp dran — eine Wdh fehlt. Gleiches Gewicht (${done.weight} kg), hol dir die ${tgtReps}.`,
+      message:
+        remaining > 0
+          ? pick(
+              [
+                `Sauber, ${done.reps} Wdh. Gleiches Gewicht halten — noch ${remaining} ${remaining === 1 ? "Satz" : "Sätze"}.`,
+                `Sitzt. ${hold} kg beibehalten, Form sauber halten. Noch ${remaining} zu gehen.`,
+                `Gut kontrolliert. Bei ${hold} kg bleiben, Ermüdung ist eingeplant.`,
+              ],
+              setNo,
+            ) + historyNote
+          : `Letzter Satz sauber im Ziel — gut gemacht.` + historyNote,
     };
   }
 
-  // Deutlich unter Ziel oder sehr schwer → zurücknehmen.
-  const nextWeight = roundToIncrement(
-    done.weight * (1 - style.stepPct),
-  );
+  // 5) Im Ziel, aber schon fordernd (RPE am Push-Level) → halten.
+  if (beatBy >= 0 && done.weight > 0) {
+    return {
+      nextWeight: hold,
+      nextReps: tgt,
+      newE1RM,
+      pr,
+      tone: "hold",
+      message:
+        remaining > 0
+          ? `Im Ziel und fordernd (RPE ${rpe}). ${hold} kg halten — genau die richtige Dosis.`
+          : `Im Ziel abgeschlossen, ordentlich gefordert.`,
+    };
+  }
+
+  // 6) Eine Wdh unter Ziel → späte Sätze: normal (Ermüdung), frühe: dranbleiben.
+  if (beatBy === -1 && done.weight > 0) {
+    return {
+      nextWeight: hold,
+      nextReps: tgt,
+      newE1RM,
+      pr,
+      tone: "hold",
+      message:
+        setNo >= 3
+          ? `Eine Wdh unter Ziel — nach ${setNo} Sätzen völlig normal. ${hold} kg halten.`
+          : `Knapp dran, eine Wdh fehlt. ${hold} kg halten und die ${tgt} holen.`,
+    };
+  }
+
+  // 7) Deutlich unter Ziel / sehr zäh → Last reduzieren.
+  const lighter = roundToIncrement(done.weight * (1 - style.stepPct));
   return {
-    nextWeight: nextWeight > 0 ? nextWeight : done.weight,
-    nextReps: tgtReps,
+    nextWeight: lighter > 0 ? lighter : hold,
+    nextReps: tgt,
     newE1RM,
     pr,
     tone: "back",
     message:
-      `Das war hart. Nächster Satz etwas leichter (${
-        nextWeight > 0 ? nextWeight : done.weight
-      } kg) und sauber für ${tgtReps} Wdh.`,
+      (setNo >= 3
+        ? `Die Kraft lässt nach — normal so spät. `
+        : `Heute zäh bei dem Gewicht. `) +
+      `Nächster Satz ${lighter > 0 ? lighter : hold} kg, sauber für ${tgt} Wdh.`,
   };
 }
 
@@ -313,15 +543,21 @@ export type LiveReaction = {
 } | null;
 
 // Reagiert, während die Person mitten in der Übung ein Gewicht einträgt.
+// Kennt den Session-Zustand: bei Folgesätzen wird nicht mehr „da geht mehr"
+// gefordert (Ermüdung), und ein bewusst gehaltenes Gewicht wird nicht kritisiert.
 export function liveReaction(
   enteredWeight: number,
   oneRm: number,
   profile: CoachProfile,
+  ctx?: { state: SessionState; insight: HistoryInsight },
 ): LiveReaction {
   if (enteredWeight <= 0 || oneRm <= 0) return null;
-  const rec = recommendSet(oneRm, profile);
+  const rec = ctx
+    ? recommendNextSet(oneRm, profile, ctx)
+    : recommendSet(oneRm, profile);
   const ratio = enteredWeight / oneRm;
   const predReps = repsForWeight(oneRm, enteredWeight);
+  const isFollowUp = (ctx?.state.completed.length ?? 0) > 0;
 
   // Nahe am oder über dem geschätzten Maximum.
   if (ratio >= 0.97) {
@@ -333,7 +569,19 @@ export function liveReaction(
         )} kg). Nur sauber und mit Sicherung — aber genau hier verschiebst du deine Grenze.`,
     };
   }
-  // Deutlich schwerer als empfohlen → anfeuern.
+  // Folgesatz: gehaltenes/leicht reduziertes Gewicht ist gewollt → nicht nörgeln.
+  if (isFollowUp) {
+    if (enteredWeight > rec.weight * 1.08) {
+      return {
+        tone: "caution",
+        message:
+          `${enteredWeight} kg ist für einen Folgesatz ambitioniert — die Ermüdung läuft mit. ` +
+          `Wenn die Form hält, gern; sonst ${rec.weight} kg.`,
+      };
+    }
+    return null;
+  }
+  // 1. Satz, deutlich schwerer als empfohlen → anfeuern.
   if (enteredWeight > rec.weight * 1.02) {
     return {
       tone: "bold",
@@ -342,7 +590,7 @@ export function liveReaction(
         `Zeig, was geht — ich zähl mit.`,
     };
   }
-  // Deutlich leichter als empfohlen → mehr fordern.
+  // 1. Satz, deutlich leichter als empfohlen → mehr fordern.
   if (enteredWeight < rec.weight * 0.92) {
     return {
       tone: "info",
