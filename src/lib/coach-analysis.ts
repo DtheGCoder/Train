@@ -28,6 +28,8 @@ export type AnalysisExercise = {
   exerciseId: string;
   name: string;
   muscle: string; // primaryMuscle nameDe
+  muscleSlug: string; // primaryMuscle slug (z. B. "triceps")
+  secondarySlugs: string[]; // sekundär beanspruchte Muskel-Slugs
   bodyRegion: string; // Oberkörper / Unterkörper / Rumpf …
   mechanic: string; // compound | isolation
   forceType: string; // push | pull | static
@@ -190,6 +192,49 @@ function classifyStandard(
   const nextRatio = idx + 1 < adj.length ? adj[idx + 1] : null;
   return { level, nextLevel, nextRatio };
 }
+
+/* ---------------- Kausal-Reasoning (übungsübergreifend) ---------------- */
+// Deutsche Labels je Muskel-Slug für verständliche Begründungen.
+const MUSCLE_DE: Record<string, string> = {
+  chest: "Brust",
+  back: "oberer Rücken",
+  lats: "Latissimus",
+  traps: "Trapez/Nacken",
+  shoulders: "Schultern",
+  biceps: "Bizeps",
+  triceps: "Trizeps",
+  forearms: "Unterarme/Griff",
+  quads: "Quadrizeps",
+  hamstrings: "Beinbeuger",
+  glutes: "Gesäß",
+  calves: "Waden",
+  abs: "Bauch",
+  obliques: "seitliche Bauchmuskeln",
+  lowerback: "unterer Rücken",
+};
+
+// Synergisten, die man sinnvoll DIREKT trainieren kann (limitieren oft Lifts).
+const TRAINABLE_SYNERGISTS = new Set([
+  "triceps",
+  "shoulders",
+  "biceps",
+  "lats",
+  "traps",
+  "glutes",
+  "hamstrings",
+  "forearms",
+  "lowerback",
+]);
+
+// Bewegungs-Muster für Kraft-Verhältnisse (bestes e1RM je Muster).
+const PATTERN_RE = {
+  bench: /(bankdr|bench|brustpress)/i,
+  ohp: /(schulterdr|overhead|military|ohp|arnold)/i,
+  squat: /(kniebeug|squat|hack)/i,
+  deadlift: /(kreuzheb|deadlift)/i,
+  row: /(rudern|row)/i,
+  verticalPull: /(klimmzug|pull.?up|chin|latzug|lat.?pull)/i,
+};
 
 /* ---------------- Hauptfunktion ---------------- */
 
@@ -513,7 +558,13 @@ export function analyze(
   }
 
   const lifts: LiftProgress[] = [];
-  for (const agg of liftMap.values()) {
+  // Trend je Übungs-ID, damit der Kausal-Reasoner stagnierende Lifts ihren
+  // Synergisten zuordnen kann.
+  const liftTrendById = new Map<
+    string,
+    { name: string; trend: LiftProgress["trend"]; daysSinceBest: number; changePct: number }
+  >();
+  for (const [exId, agg] of liftMap) {
     if (agg.sessions.length < 3) continue;
     agg.sessions.sort((a, b) => a.date.getTime() - b.date.getTime());
     const firstE = agg.sessions[0].e1rm;
@@ -530,6 +581,7 @@ export function analyze(
     const daysSinceBest = Math.max(0, Math.floor((now.getTime() - bestDate.getTime()) / DAY));
     const trend: LiftProgress["trend"] =
       changePct > 4 ? "up" : changePct < -4 ? "down" : "flat";
+    liftTrendById.set(exId, { name: agg.name, trend, daysSinceBest, changePct });
     lifts.push({
       name: agg.name,
       sessions: agg.sessions.length,
@@ -841,6 +893,197 @@ export function analyze(
     findings: selFindings,
   });
 
+  /* ===== 7. Zusammenhänge & limitierende Faktoren (Kausal-Reasoning) ===== */
+  // Hier verknüpft der Coach Übungen miteinander: Welche schwachen Hilfsmuskeln
+  // bremsen welche Grundübung? Stimmen die Kraft-Verhältnisse zwischen den
+  // großen Lifts? Wird ein Schlüsselmuskel nur indirekt mitgenommen?
+
+  // Direktes Volumen/Sätze je Muskel-SLUG (über die Primärmuskel-Zuordnung)
+  // und wie oft ein Muskel nur als Synergist (sekundär) drankam.
+  const directVolBySlug = new Map<string, number>();
+  const directSetsBySlug = new Map<string, number>();
+  const secondaryHitsBySlug = new Map<string, number>();
+  for (const w of done) {
+    for (const ex of w.exercises) {
+      for (const s of ex.sets) {
+        if (!isWorking(s)) continue;
+        directVolBySlug.set(ex.muscleSlug, (directVolBySlug.get(ex.muscleSlug) ?? 0) + setVolume(s));
+        directSetsBySlug.set(ex.muscleSlug, (directSetsBySlug.get(ex.muscleSlug) ?? 0) + 1);
+        for (const sec of ex.secondarySlugs) {
+          secondaryHitsBySlug.set(sec, (secondaryHitsBySlug.get(sec) ?? 0) + 1);
+        }
+      }
+    }
+  }
+  const totalVol = [...directVolBySlug.values()].reduce((s, v) => s + v, 0);
+
+  // Metadaten je Übungs-ID (Name, Mechanik, Synergisten).
+  const exMeta = new Map<string, { name: string; mechanic: string; secondary: string[] }>();
+  for (const w of done) {
+    for (const ex of w.exercises) {
+      if (!exMeta.has(ex.exerciseId)) {
+        exMeta.set(ex.exerciseId, {
+          name: ex.name,
+          mechanic: ex.mechanic,
+          secondary: ex.secondarySlugs,
+        });
+      }
+    }
+  }
+
+  // Bestes geschätztes 1RM je Bewegungsmuster (für Kraft-Verhältnisse).
+  const bestForPattern = (re: RegExp): number => {
+    let best = 0;
+    for (const agg of liftMap.values()) {
+      if (re.test(agg.name)) for (const s of agg.sessions) best = Math.max(best, s.e1rm);
+    }
+    return best;
+  };
+  const eBench = bestForPattern(PATTERN_RE.bench);
+  const eOhp = bestForPattern(PATTERN_RE.ohp);
+  const eSquat = bestForPattern(PATTERN_RE.squat);
+  const eDead = bestForPattern(PATTERN_RE.deadlift);
+  const eRow = bestForPattern(PATTERN_RE.row);
+
+  const linkFindings: Finding[] = [];
+  let linkScore = 82;
+  const muscleDe = (slug: string) => MUSCLE_DE[slug] ?? slug;
+  const directShare = (slug: string) =>
+    totalVol > 0 ? ((directVolBySlug.get(slug) ?? 0) / totalVol) * 100 : 0;
+
+  // (a) Stagnierende/rückläufige Grundübung → schwacher Synergist als Ursache.
+  const starvedCauses = new Set<string>();
+  for (const [exId, info] of liftTrendById) {
+    const isStalled =
+      info.trend === "down" || (info.trend === "flat" && info.daysSinceBest > 28);
+    if (!isStalled) continue;
+    const meta = exMeta.get(exId);
+    if (!meta || meta.mechanic !== "compound") continue;
+    for (const slug of meta.secondary) {
+      if (!TRAINABLE_SYNERGISTS.has(slug)) continue;
+      const sets = directSetsBySlug.get(slug) ?? 0;
+      const share = directShare(slug);
+      // „Ausgehungerter" Synergist: kaum/kein direktes Volumen.
+      if (sets <= 2 || share < 4) {
+        const key = `${exId}:${slug}`;
+        if (starvedCauses.has(key)) continue;
+        starvedCauses.add(key);
+        const dueWord = info.trend === "down" ? "fällt" : "stagniert";
+        linkFindings.push({
+          severity: "warning",
+          title: `${info.name} ${dueWord} — ${muscleDe(slug)} ist der wahrscheinliche Engpass`,
+          detail:
+            `${info.name} kommt nicht voran, und ${muscleDe(slug)} bekommt mit nur ` +
+            `${sets} direkten Sätzen (${round(share)}% deines Volumens) kaum eigenes Training. ` +
+            `Bei dieser Übung ist ${muscleDe(slug)} ein zentraler Hilfsmuskel — ist er die ` +
+            `Schwachstelle, blockiert er den ganzen Lift. Bau 2–4 gezielte Sätze ${muscleDe(slug)} pro Woche ein.`,
+        });
+        linkScore -= 12;
+        addPriority(
+          "warning",
+          `${muscleDe(slug)} gezielt kräftigen — bremst dein ${info.name}.`,
+        );
+      }
+    }
+  }
+
+  // (b) Kraft-Verhältnisse zwischen den großen Lifts.
+  if (eBench > 0 && eRow > 0 && eRow < eBench * 0.7) {
+    linkFindings.push({
+      severity: "warning",
+      title: "Drücken läuft dem Ziehen davon",
+      detail:
+        `Dein Bankdrücken (${round(eBench)} kg geschätzt) ist deutlich stärker als dein Rudern ` +
+        `(${round(eRow)} kg). Ein schwacher horizontaler Zug (oberer Rücken, hintere Schulter) ` +
+        `zieht die Schultern nach vorn, erhöht das Verletzungsrisiko und limitiert auf Dauer ` +
+        `sogar deine Druckkraft. Ziel: Rudern ungefähr auf Bank-Niveau bringen.`,
+    });
+    linkScore -= 12;
+    addPriority("warning", "Rudervolumen erhöhen — Zug hinkt deinem Drücken hinterher.");
+  }
+  if (eBench > 0 && eOhp > 0 && eOhp < eBench * 0.5) {
+    linkFindings.push({
+      severity: "info",
+      title: "Überkopfdrücken ist dein schwaches Glied",
+      detail:
+        `Dein Schulterdrücken (${round(eOhp)} kg) liegt unter ~50% deines Bankdrückens ` +
+        `(${round(eBench)} kg). Üblich sind 60–65%. Das deutet auf schwache Schultern/Trizeps ` +
+        `oder zu wenig vertikales Drücken hin — beides hilft mittelbar auch der Bank.`,
+    });
+    linkScore -= 6;
+  }
+  if (eSquat > 0 && eDead > 0 && eSquat >= eDead) {
+    linkFindings.push({
+      severity: "warning",
+      title: "Hintere Kette hinkt der Kniebeuge hinterher",
+      detail:
+        `Deine Kniebeuge (${round(eSquat)} kg) ist gleich stark oder stärker als dein Kreuzheben ` +
+        `(${round(eDead)} kg) — normal ist Kreuzheben ~10–20% höher. Das spricht für eine ` +
+        `schwache hintere Kette (Beinbeuger, Gesäß, unterer Rücken). Mehr Kreuzheben-Varianten, ` +
+        `rumänisches Kreuzheben und Gesäß-Arbeit.`,
+    });
+    linkScore -= 10;
+    addPriority("warning", "Hintere Kette stärken (RDL, Hip Thrust) — Kreuzheben < Kniebeuge.");
+  }
+  if (eSquat > 0 && eBench > 0 && eBench > eSquat) {
+    linkFindings.push({
+      severity: "warning",
+      title: "Unterkörper bleibt hinter dem Oberkörper zurück",
+      detail:
+        `Dein Bankdrücken (${round(eBench)} kg) übertrifft deine Kniebeuge (${round(eSquat)} kg). ` +
+        `Normalerweise beugst du deutlich mehr als du drückst. Dein Beintraining hat klar Nachholbedarf.`,
+    });
+    linkScore -= 10;
+    addPriority("warning", "Beinkraft priorisieren — Kniebeuge unter Bankdrück-Niveau.");
+  }
+
+  // (c) Schlüsselmuskel nur indirekt belastet (nie direkt).
+  for (const slug of ["triceps", "biceps", "shoulders", "hamstrings", "glutes"]) {
+    const directSets = directSetsBySlug.get(slug) ?? 0;
+    const indirect = secondaryHitsBySlug.get(slug) ?? 0;
+    if (directSets === 0 && indirect >= 6) {
+      linkFindings.push({
+        severity: "info",
+        title: `${muscleDe(slug)} wird nur mitgenommen, nie direkt trainiert`,
+        detail:
+          `${muscleDe(slug)} taucht in ${indirect} Sätzen nur als Hilfsmuskel auf, hat aber kein ` +
+          `einziges direktes Training. Für ausgewogene Entwicklung — und als stabile Stütze deiner ` +
+          `Grundübungen — fehlt gezieltes ${muscleDe(slug)}-Volumen.`,
+      });
+      linkScore -= 4;
+    }
+  }
+
+  if (linkFindings.length === 0) {
+    linkFindings.push({
+      severity: "good",
+      title: "Keine offensichtlichen Schwachstellen-Ketten",
+      detail:
+        "Deine Lifts, Synergisten und Kraft-Verhältnisse passen zueinander. Kein Hilfsmuskel " +
+        "bremst sichtbar eine Grundübung aus. Halte die Balance und steigere weiter.",
+    });
+  }
+
+  const ratioMetrics: Metric[] = [];
+  if (eBench > 0 && eRow > 0)
+    ratioMetrics.push({ label: "Rudern : Bank", value: `${round((eRow / eBench) * 100)}%`, sub: "Ziel ~80–100%" });
+  if (eBench > 0 && eOhp > 0)
+    ratioMetrics.push({ label: "OHP : Bank", value: `${round((eOhp / eBench) * 100)}%`, sub: "Ziel ~60–65%" });
+  if (eSquat > 0 && eDead > 0)
+    ratioMetrics.push({ label: "Kreuzh. : Knieb.", value: `${round((eDead / eSquat) * 100)}%`, sub: "Ziel ~110–120%" });
+
+  sections.push({
+    key: "links",
+    title: "Zusammenhänge & limitierende Faktoren",
+    score: clamp(linkScore),
+    summary:
+      starvedCauses.size > 0
+        ? `${starvedCauses.size} mögliche Engpass-Kette(n) zwischen Übungen und Hilfsmuskeln erkannt.`
+        : "Übungsübergreifende Auswertung: Synergisten, Schwachstellen und Kraft-Verhältnisse.",
+    metrics: ratioMetrics,
+    findings: linkFindings,
+  });
+
   /* ===== Kraftstandards (rel. Körpergewicht) ===== */
   const standards: StrengthStandard[] = [];
   const bw = profile.bodyweightKg;
@@ -879,6 +1122,7 @@ export function analyze(
     balance: 1.0,
     intensity: 1.1,
     selection: 1.2,
+    links: 1.25,
   };
   let wsum = 0;
   let acc = 0;

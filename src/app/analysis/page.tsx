@@ -169,6 +169,11 @@ export default async function AnalysisPage() {
       exerciseId: we.exerciseId,
       name: we.exercise.nameDe,
       muscle: we.exercise.primaryMuscle.nameDe,
+      muscleSlug: we.exercise.primaryMuscle.slug,
+      secondarySlugs: we.exercise.secondaryMuscles
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
       bodyRegion: we.exercise.primaryMuscle.bodyRegion,
       mechanic: we.exercise.mechanic,
       forceType: we.exercise.forceType,
