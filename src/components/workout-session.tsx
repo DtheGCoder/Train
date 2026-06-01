@@ -1,6 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type ReactNode,
+  type PointerEvent as RPointerEvent,
+  type MouseEvent as RMouseEvent,
+} from "react";
 import {
   Check,
   Plus,
@@ -436,13 +445,12 @@ export function WorkoutSession({
               {ex.sets.map((s, i) => {
                 const p = prev?.[i];
                 return (
-                  <div
+                  <SwipeRow
                     key={s.id}
-                    className={cn(
-                      "group grid grid-cols-[2.5rem_1fr_1fr_1fr_3rem] items-center gap-2 rounded-lg px-2 py-1.5",
-                      s.isCompleted && "bg-success/10",
-                    )}
+                    onDelete={() => handleDeleteSet(ex, s.id)}
+                    completed={s.isCompleted}
                   >
+                    <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_3rem] items-center gap-2 px-2 py-1.5">
                     <button
                       onClick={() => cycleType(ex, s)}
                       className={cn(
@@ -519,9 +527,16 @@ export function WorkoutSession({
                     >
                       <Check className="size-5" />
                     </button>
-                  </div>
+                    </div>
+                  </SwipeRow>
                 );
               })}
+
+              {ex.sets.length > 0 && (
+                <p className="px-2 pt-1.5 text-[11px] text-muted/70">
+                  Tipp: Satz nach links wischen zum Löschen.
+                </p>
+              )}
 
               <div className="flex gap-2 px-2 pt-2">
                 <button
@@ -596,4 +611,180 @@ export function WorkoutSession({
 
 function Minus() {
   return <span className="text-lg leading-none">−</span>;
+}
+
+// Wischbare Satz-Zeile: nach links ziehen, um den Satz zu löschen.
+// Ab der Schwelle „rastet" es ein (Haptik), beim Loslassen wischt die Zeile
+// raus und kollabiert sanft – sonst federt sie zurück. Vertikales Scrollen und
+// das Tippen in die Felder bleiben unberührt (Geste rastet nur klar horizontal
+// ein, und ein versehentlicher Tap nach dem Wischen wird unterdrückt).
+const SWIPE_THRESHOLD = 88; // px bis zum Auslösen
+
+function SwipeRow({
+  children,
+  onDelete,
+  completed,
+}: {
+  children: ReactNode;
+  onDelete: () => void;
+  completed?: boolean;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const startX = useRef(0);
+  const startY = useRef(0);
+  const engaged = useRef(false);
+  const armedRef = useRef(false);
+  const justSwiped = useRef(false);
+  const dxRef = useRef(0); // aktueller Versatz (synchron, für die Schwellen-Prüfung)
+
+  const [dx, setDx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [maxH, setMaxH] = useState<number | null>(null);
+
+  const buzz = (ms: number) => {
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate?.(ms);
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
+  const reset = () => {
+    setDragging(false);
+    setDx(0);
+    dxRef.current = 0;
+  };
+
+  const triggerRemove = () => {
+    setDragging(false);
+    setRemoving(true);
+    buzz(16);
+    // Höhe einfrieren und im nächsten Frame auf 0 kollabieren, damit die
+    // Nachbarzeilen sauber nachrücken.
+    const el = wrapRef.current;
+    if (el) {
+      const h = el.offsetHeight;
+      setMaxH(h);
+      requestAnimationFrame(() => requestAnimationFrame(() => setMaxH(0)));
+    }
+    // Erst nach der Animation tatsächlich entfernen (State + Server).
+    window.setTimeout(onDelete, 340);
+  };
+
+  const onPointerDown = (e: RPointerEvent<HTMLDivElement>) => {
+    if (removing) return;
+    startX.current = e.clientX;
+    startY.current = e.clientY;
+    engaged.current = false;
+    armedRef.current = false;
+  };
+
+  const onPointerMove = (e: RPointerEvent<HTMLDivElement>) => {
+    if (removing) return;
+    const moveX = e.clientX - startX.current;
+    const moveY = e.clientY - startY.current;
+    if (!engaged.current) {
+      // Nur einrasten, wenn die Bewegung klar horizontal ist – sonst bleibt
+      // vertikales Scrollen / das Tippen ins Feld unangetastet.
+      if (Math.abs(moveX) < 10 || Math.abs(moveX) <= Math.abs(moveY)) return;
+      engaged.current = true;
+      setDragging(true);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
+    e.preventDefault();
+    const d = Math.max(-300, Math.min(0, moveX));
+    dxRef.current = d;
+    setDx(d);
+    const nowArmed = -d >= SWIPE_THRESHOLD;
+    if (nowArmed && !armedRef.current) {
+      armedRef.current = true;
+      buzz(10); // fühlbares Einrasten
+    } else if (!nowArmed) {
+      armedRef.current = false;
+    }
+  };
+
+  const onPointerUp = () => {
+    if (removing || !engaged.current) return;
+    engaged.current = false;
+    // Folgenden Klick (z. B. auf den Haken) nach einem Wisch unterdrücken.
+    justSwiped.current = true;
+    window.setTimeout(() => {
+      justSwiped.current = false;
+    }, 80);
+    if (-dxRef.current >= SWIPE_THRESHOLD) triggerRemove();
+    else reset();
+  };
+
+  const onClickCapture = (e: RMouseEvent<HTMLDivElement>) => {
+    if (justSwiped.current) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  const progress = Math.min(1, Math.max(0, -dx / SWIPE_THRESHOLD));
+  const isArmed = -dx >= SWIPE_THRESHOLD;
+
+  return (
+    <div
+      ref={wrapRef}
+      className={cn(
+        "relative select-none overflow-hidden",
+        removing && "transition-[max-height,opacity] duration-300 ease-in",
+      )}
+      style={{
+        touchAction: "pan-y",
+        maxHeight: maxH ?? undefined,
+        opacity: removing ? 0 : 1,
+      }}
+    >
+      {/* Lösch-Hintergrund – wird beim Wischen sichtbar */}
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-0 flex items-center justify-end rounded-lg pr-5 transition-colors",
+          isArmed ? "bg-danger" : "bg-danger/70",
+        )}
+        style={{ opacity: removing ? 1 : progress }}
+        aria-hidden
+      >
+        <Trash2
+          className="size-5 text-white"
+          style={{
+            transform: `scale(${0.7 + progress * 0.5})`,
+            opacity: 0.5 + progress * 0.5,
+          }}
+        />
+      </div>
+
+      {/* Vordergrund (wischbar, deckend) */}
+      <div
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={reset}
+        onClickCapture={onClickCapture}
+        className={cn("relative rounded-lg bg-surface", dragging && "shadow-lg")}
+        style={{
+          transform: removing ? "translateX(-100%)" : `translateX(${dx}px)`,
+          transition: dragging
+            ? "none"
+            : "transform 280ms cubic-bezier(0.22, 1, 0.36, 1)",
+        }}
+      >
+        {/* Abgehakte Sätze: zarter grüner Tint über dem deckenden Hintergrund */}
+        {completed && (
+          <div className="pointer-events-none absolute inset-0 rounded-lg bg-success/10" />
+        )}
+        <div className="relative">{children}</div>
+      </div>
+    </div>
+  );
 }
