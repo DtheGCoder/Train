@@ -1,5 +1,7 @@
 "use server";
 
+import { spawn } from "node:child_process";
+import path from "node:path";
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -12,6 +14,7 @@ import {
   requireUser,
 } from "@/lib/auth";
 import { provisionTaxonomy, provisionUserContent } from "@/lib/provision";
+import { getVersionInfo } from "@/lib/version";
 
 /* ---------------- Authentifizierung ---------------- */
 
@@ -95,6 +98,55 @@ export async function deleteUser(id: string) {
 
   await db.user.delete({ where: { id } });
   revalidatePath("/admin");
+}
+
+/* ---------------- Manuelles Update ---------------- */
+
+// Feedback-State für den manuellen Update-Button (useActionState im Client).
+export type UpdateState = { ok?: boolean; error?: string } | undefined;
+
+// Admin: startet das Update-Skript manuell, sofern ein Update verfügbar ist.
+// Das Skript (scripts/auto-update.sh) macht pull -> install -> migrate ->
+// build -> `pm2 reload` und startet damit den laufenden Server neu. Deshalb
+// wird es losgelöst (detached) gestartet: die Action kehrt sofort zurück, der
+// Neustart passiert im Hintergrund. Eigene Logs schreibt das Skript nach
+// logs/auto-update.log.
+export async function triggerManualUpdate(): Promise<UpdateState> {
+  await requireAdmin();
+
+  // Nur aktualisieren, wenn GitHub wirklich einen neueren Commit hat.
+  const version = await getVersionInfo();
+  if (version.upToDate === true) {
+    return { error: "Bereits aktuell – kein Update verfügbar." };
+  }
+  if (version.upToDate === null) {
+    return {
+      error:
+        version.error ?? "Update-Status konnte nicht ermittelt werden.",
+    };
+  }
+
+  const script = path.join(process.cwd(), "scripts", "auto-update.sh");
+
+  try {
+    // Losgelöst starten und Eltern-Prozess entkoppeln, damit der spätere
+    // `pm2 reload` nicht diese laufende Anfrage mittendrin abschießt.
+    const child = spawn("bash", [script], {
+      cwd: process.cwd(),
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+  } catch (e) {
+    return {
+      error:
+        e instanceof Error
+          ? `Update konnte nicht gestartet werden: ${e.message}`
+          : "Update konnte nicht gestartet werden.",
+    };
+  }
+
+  return { ok: true };
 }
 
 /* ---------------- Übungen ---------------- */

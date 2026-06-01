@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import { createUser } from "@/lib/actions";
 import { PageHeader, Card, Button, Input } from "@/components/ui";
 import { DeleteUserButton } from "@/components/delete-user-button";
+import { ManualUpdateButton } from "@/components/manual-update-button";
 import { getVersionInfo, GITHUB_URL } from "@/lib/version";
 import {
   ShieldCheck,
@@ -49,7 +50,8 @@ export default async function AdminPage() {
         {version.upToDate === false && (
           <div className="mb-3 flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
             <AlertTriangle className="size-4" />
-            Ein Update ist verfügbar. Der Server aktualisiert sich automatisch.
+            Ein Update ist verfügbar. Der Server aktualisiert sich automatisch –
+            oder du stößt es unten manuell an.
           </div>
         )}
         {version.error && (
@@ -89,6 +91,8 @@ export default async function AdminPage() {
             )}
           </p>
         )}
+
+        {version.upToDate === false && <ManualUpdateButton />}
 
         <a
           href={GITHUB_URL}
