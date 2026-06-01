@@ -174,7 +174,7 @@ export default async function AdminPage() {
               >
                 <div className="min-w-0">
                   <p className="truncate font-medium">
-                    {u.username}
+                    {u.displayName ?? u.username}
                     {isSelf && (
                       <span className="ml-2 text-xs text-muted">(du)</span>
                     )}
@@ -182,6 +182,9 @@ export default async function AdminPage() {
                   <p className="text-xs text-muted">
                     {u.isAdmin ? "Administrator" : "Benutzer"} · seit{" "}
                     {format(u.createdAt, "dd.MM.yyyy", { locale: de })}
+                    {u.displayName && (
+                      <> · Login: {u.username}</>
+                    )}
                   </p>
                 </div>
                 <DeleteUserButton

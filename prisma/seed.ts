@@ -27,11 +27,26 @@ async function seedAdmin() {
   );
 }
 
+// Setzt den Anzeigenamen des Admin-Accounts auf "DtheG" (Login bleibt "admin").
+// Idempotent & nicht-destruktiv: nur, solange noch kein Anzeigename gesetzt ist,
+// damit eine spätere manuelle Änderung erhalten bleibt.
+async function ensureAdminDisplayName() {
+  const username = (process.env.ADMIN_USERNAME ?? "admin").toLowerCase();
+  const res = await db.user.updateMany({
+    where: { username, displayName: null },
+    data: { displayName: "DtheG" },
+  });
+  if (res.count > 0) {
+    console.log(`Set display name "DtheG" for login "${username}".`);
+  }
+}
+
 async function main() {
   console.log("Seeding globale Taxonomie (Muskeln & Equipment)...");
   await provisionTaxonomy(db);
 
   await seedAdmin();
+  await ensureAdminDisplayName();
 
   // Jeder Nutzer bekommt seinen eigenen Übungskatalog, Vorlagen & Einstellungen.
   const users = await db.user.findMany({ select: { id: true, username: true } });

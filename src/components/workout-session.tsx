@@ -104,10 +104,11 @@ export function WorkoutSession({
   const [, startTransition] = useTransition();
   const router = useRouter();
   const [isFinishing, setIsFinishing] = useState(false);
-  // Abschluss-Übersicht: Coach-Fazit (Snapshot beim Beenden) + ob bereits
-  // gespeichert wurde (steuert den Weiter-Button, der zur Verlaufsseite führt).
+  // Abschluss-Übersicht: Coach-Fazit (Snapshot beim Beenden). Gespeichert wird
+  // erst, wenn der Nutzer selbst auf „Zum Verlauf" tippt – so bleibt die
+  // Übersicht offen, statt durch das Speichern sofort weggeleitet zu werden.
   const [finishSummary, setFinishSummary] = useState<WorkoutSummary | null>(null);
-  const [finishSaved, setFinishSaved] = useState(false);
+  const [finishSaving, setFinishSaving] = useState(false);
   // Letzter getippter RPE-Wert je Satz (synchron, damit das Abhaken den
   // gerade eingegebenen Wert auswertet, bevor der State-Re-Render greift).
   const rpeRef = useRef<Record<string, number | null>>({});
@@ -399,17 +400,18 @@ export function WorkoutSession({
       ),
     );
     setIsFinishing(true);
-
-    // Im Hintergrund speichern (ohne Redirect) – der Nutzer klickt selbst
-    // weiter, sobald er die Übersicht gelesen hat.
-    startTransition(async () => {
-      await finishWorkout(initial.id);
-      setFinishSaved(true);
-    });
+    // BEWUSST hier noch NICHT speichern: finishWorkout setzt finishedAt, was
+    // die Workout-Seite serverseitig sofort auf /history umleiten würde – die
+    // Übersicht wäre weg. Gespeichert wird erst beim Klick auf „Zum Verlauf".
   };
 
   const handleGoToHistory = () => {
-    router.push(`/history/${initial.id}`);
+    if (finishSaving) return;
+    setFinishSaving(true);
+    startTransition(async () => {
+      await finishWorkout(initial.id);
+      router.push(`/history/${initial.id}`);
+    });
   };
 
   const handleDiscard = () => {
@@ -428,7 +430,7 @@ export function WorkoutSession({
           volume={stats.volume}
           sets={stats.completedSets}
           summary={finishSummary}
-          saved={finishSaved}
+          saving={finishSaving}
           onContinue={handleGoToHistory}
         />
       )}
@@ -758,14 +760,14 @@ function FinishOverlay({
   volume,
   sets,
   summary,
-  saved,
+  saving,
   onContinue,
 }: {
   durationLabel: string;
   volume: number;
   sets: number;
   summary: WorkoutSummary | null;
-  saved: boolean;
+  saving: boolean;
   onContinue: () => void;
 }) {
   const pieces = useMemo(() => {
@@ -874,20 +876,21 @@ function FinishOverlay({
             </div>
           )}
 
-          {/* Weiter – der Nutzer klickt selbst weiter */}
+          {/* Weiter – der Nutzer klickt selbst weiter (nichts verschwindet
+              von allein). Erst hier wird gespeichert. */}
           <button
             type="button"
             onClick={onContinue}
-            disabled={!saved}
+            disabled={saving}
             className="mt-6 inline-flex min-h-12 w-full select-none items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:opacity-90 active:opacity-80 disabled:opacity-60"
           >
-            {saved ? (
+            {saving ? (
               <>
-                Zum Verlauf <ArrowRight className="size-4" />
+                <Loader2 className="size-4 animate-spin" /> wird gespeichert…
               </>
             ) : (
               <>
-                <Loader2 className="size-4 animate-spin" /> wird gespeichert…
+                Zum Verlauf <ArrowRight className="size-4" />
               </>
             )}
           </button>

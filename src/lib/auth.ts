@@ -9,7 +9,8 @@ const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 30; // 30 Tage
 
 export type SessionUser = {
   id: string;
-  username: string;
+  username: string; // Login-Name
+  displayName: string | null; // Anzeigename (Fallback: username)
   isAdmin: boolean;
 };
 
@@ -72,6 +73,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   return {
     id: session.user.id,
     username: session.user.username,
+    displayName: session.user.displayName,
     isAdmin: session.user.isAdmin,
   };
 });

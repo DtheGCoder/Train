@@ -98,7 +98,7 @@ export function Nav({ user }: { user: SessionUser | null }) {
                 <span className="flex flex-col items-start leading-tight">
                   <span>Abmelden</span>
                   <span className="text-[11px] font-normal text-muted">
-                    {user.username}
+                    {user.displayName ?? user.username}
                   </span>
                 </span>
               </button>
