@@ -154,6 +154,24 @@ export function WorkoutSession({
   const setReaction = (exId: string, r: CoachReaction) =>
     setCoachMsg((prev) => ({ ...prev, [exId]: r }));
 
+  // Arbeitssätze (ohne Aufwärmsätze) einer Übung.
+  const workingSetsOf = (ex: ExState) =>
+    ex.sets.filter((s) => s.setType !== "warmup");
+
+  // Übung gilt als erledigt, wenn alle gelisteten Arbeitssätze abgehakt sind.
+  const isExerciseDone = (ex: ExState) => {
+    const w = workingSetsOf(ex);
+    return w.length > 0 && w.every((s) => s.isCompleted);
+  };
+
+  // Nächste noch offene Übung (in Reihenfolge ab der aktuellen, dann von vorn).
+  const nextOpenExercise = (exId: string): ExState | null => {
+    const idx = exercises.findIndex((e) => e.id === exId);
+    if (idx < 0) return null;
+    const order = [...exercises.slice(idx + 1), ...exercises.slice(0, idx)];
+    return order.find((e) => !isExerciseDone(e)) ?? null;
+  };
+
   const reactToWeight = (ex: ExState, weight: number) => {
     if (weight <= 0) return;
     const r = liveReaction(weight, liveE1RM(ex), coach.profile);
@@ -177,17 +195,43 @@ export function WorkoutSession({
     const rpe = s.id in rpeRef.current ? rpeRef.current[s.id] : s.rpe;
     patchSet(ex.id, s.id, next ? { isCompleted: next, rpe } : { isCompleted: next });
     if (next) {
-      // Coach wertet den Satz aus (Grenze ggf. nach oben verschieben).
-      const priorE1RM = liveE1RM(ex);
-      const adj = autoregulate(
-        { weight: s.weight, reps: s.reps, rpe },
-        priorE1RM,
-        coach.profile,
-      );
-      setReaction(ex.id, { tone: adj.tone, message: adj.message });
-      // Rest-Timer mit vom Coach empfohlener Pause (Ziel/Stil-abhängig).
-      setRestSeconds(recommendedRest(coach.profile));
-      setRestKey((k) => k + 1);
+      // Voraussichtlicher Zustand der Übung NACH diesem Abhaken (State ist
+      // asynchron, daher lokal nachbilden).
+      const updatedEx: ExState = {
+        ...ex,
+        sets: ex.sets.map((x) =>
+          x.id === s.id ? { ...x, isCompleted: true, rpe } : x,
+        ),
+      };
+      if (isExerciseDone(updatedEx)) {
+        // Alle geplanten Arbeitssätze sind erledigt: NICHT zum nächsten Satz
+        // drängen, sondern zur nächsten Übung weiterleiten.
+        const done = workingSetsOf(updatedEx).filter((x) => x.isCompleted).length;
+        const nextEx = nextOpenExercise(ex.id);
+        setReaction(ex.id, {
+          tone: "done",
+          message: nextEx
+            ? `Stark — ${done} ${done === 1 ? "Satz" : "Sätze"} sauber durch. Diese Übung ist abgehakt. Weiter zu „${nextEx.name}“. (Willst du mehr, „+ Satz“.)`
+            : `Stark — ${done} ${done === 1 ? "Satz" : "Sätze"} durch. Letzte Übung erledigt — Zeit, das Workout zu beenden.`,
+        });
+        // Pause nur, wenn es noch weitergeht.
+        if (nextEx) {
+          setRestSeconds(recommendedRest(coach.profile));
+          setRestKey((k) => k + 1);
+        }
+      } else {
+        // Coach wertet den Satz aus (Grenze ggf. nach oben verschieben).
+        const priorE1RM = liveE1RM(ex);
+        const adj = autoregulate(
+          { weight: s.weight, reps: s.reps, rpe },
+          priorE1RM,
+          coach.profile,
+        );
+        setReaction(ex.id, { tone: adj.tone, message: adj.message });
+        // Rest-Timer mit vom Coach empfohlener Pause (Ziel/Stil-abhängig).
+        setRestSeconds(recommendedRest(coach.profile));
+        setRestKey((k) => k + 1);
+      }
     }
   };
 
@@ -312,6 +356,11 @@ export function WorkoutSession({
 
       {exercises.map((ex) => {
         const prev = previous[ex.exerciseId];
+        const wsets = workingSetsOf(ex);
+        const setsPlanned = wsets.length;
+        const setsDone = wsets.filter((s) => s.isCompleted).length;
+        const exDone = setsPlanned > 0 && setsDone === setsPlanned;
+        const nextName = exDone ? (nextOpenExercise(ex.id)?.name ?? null) : null;
         return (
           <div key={ex.id} className="rounded-xl border border-border bg-surface">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -342,6 +391,10 @@ export function WorkoutSession({
                 reaction={coachMsg[ex.id] ?? null}
                 oneRm={liveE1RM(ex)}
                 onLimitTest={() => handleLimitTest(ex)}
+                done={exDone}
+                nextExerciseName={nextName}
+                setsDone={setsDone}
+                setsPlanned={setsPlanned}
               />
 
               {/* Spaltenkopf */}

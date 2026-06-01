@@ -705,6 +705,142 @@ export function analyze(
     findings: intFindings,
   });
 
+  /* ===== 6. Übungsauswahl ===== */
+  // Bewertet, OB die richtigen Übungen trainiert werden: Grundübungen vs.
+  // Isolation, Bewegungsmuster-Abdeckung, Vielfalt vs. Zettelchaos und ob
+  // Übungen oft genug wiederholt werden, um Fortschritt überhaupt messbar zu
+  // machen.
+  let compoundSets = 0;
+  let isolationSets = 0;
+  const exWorkingSets = new Map<string, number>(); // exerciseId -> Arbeitssätze
+  const exName = new Map<string, string>();
+  for (const w of done) {
+    for (const ex of w.exercises) {
+      let added = false;
+      for (const s of ex.sets) {
+        if (!isWorking(s)) continue;
+        added = true;
+        if (ex.mechanic === "compound") compoundSets++;
+        else if (ex.mechanic === "isolation") isolationSets++;
+      }
+      if (added) {
+        exWorkingSets.set(ex.exerciseId, (exWorkingSets.get(ex.exerciseId) ?? 0) + 1);
+        exName.set(ex.exerciseId, ex.name);
+      }
+    }
+  }
+  const mechSets = compoundSets + isolationSets;
+  const distinctExercises = exWorkingSets.size;
+
+  // Fundamentale Bewegungsmuster — Abdeckung über die ganze Historie.
+  const PATTERNS: Array<{ label: string; match: RegExp }> = [
+    { label: "Kniebeuge (Squat)", match: /(kniebeug|squat|beinpress|hack)/i },
+    { label: "Hüftstreckung (Kreuzheben/Hip Hinge)", match: /(kreuzheb|deadlift|hip.?thrust|good.?morning|rdl|romanian)/i },
+    { label: "Horizontales Drücken", match: /(bankdr|bench|liegest|dip|brustpress|push.?up)/i },
+    { label: "Vertikales Drücken", match: /(schulterdr|overhead|military|ohp|arnold)/i },
+    { label: "Horizontales Ziehen (Rudern)", match: /(rudern|row)/i },
+    { label: "Vertikales Ziehen (Klimmzug/Latzug)", match: /(klimmzug|pull.?up|chin.?up|latzug|lat.?pull)/i },
+  ];
+  const trainedNames = [...exName.values()];
+  const coveredPatterns = PATTERNS.filter((p) => trainedNames.some((n) => p.match.test(n)));
+  const missingPatterns = PATTERNS.filter((p) => !coveredPatterns.includes(p));
+
+  // Übungen, die zu selten wiederholt werden, um Progression zu zeigen.
+  const oneOffExercises = [...exWorkingSets.entries()].filter(([, c]) => c === 1).length;
+
+  const selFindings: Finding[] = [];
+  let selScore = 75;
+
+  if (mechSets > 0) {
+    const compoundPct = (compoundSets / mechSets) * 100;
+    if (compoundPct < 40) {
+      selFindings.push({
+        severity: "warning",
+        title: `Nur ${round(compoundPct)}% Grundübungen`,
+        detail:
+          "Dein Training besteht überwiegend aus Isolationsübungen (Kabel, Maschinen, " +
+          "Arme). Die bringen Feinschliff, aber den Großteil an Kraft und Muskelmasse " +
+          "holen mehrgelenkige Grundübungen. Bau Kniebeuge, Kreuzheben, Drücken und " +
+          "Rudern ins Zentrum.",
+      });
+      selScore -= 22;
+      addPriority("warning", "Mehr Grundübungen ins Zentrum (Kniebeuge, Kreuzheben, Drücken, Rudern).");
+    } else if (compoundPct > 85 && distinctExercises >= 4) {
+      selFindings.push({
+        severity: "info",
+        title: `${round(compoundPct)}% Grundübungen — fast nur schwer`,
+        detail:
+          "Sehr grundübungslastig. Top für Kraft, aber etwas gezielte Isolation " +
+          "(Arme, hinterer Schulter, Waden) schließt Lücken und beugt Dysbalancen vor.",
+      });
+    } else {
+      selFindings.push({
+        severity: "good",
+        title: `${round(compoundPct)}% Grundübungen`,
+        detail:
+          "Gutes Verhältnis aus mehrgelenkigen Grundübungen und ergänzender Isolation. " +
+          "Genau diese Mischung treibt Kraft und Aufbau effizient.",
+      });
+    }
+  }
+
+  // Muster-Abdeckung
+  if (done.length >= 4 || distinctExercises >= 4) {
+    if (missingPatterns.length === 0) {
+      selFindings.push({
+        severity: "good",
+        title: "Alle Grund-Bewegungsmuster abgedeckt",
+        detail: "Drücken, Ziehen, Kniebeuge und Hüftstreckung — alles dabei. So sieht ein vollständiger Plan aus.",
+      });
+    } else {
+      const labels = missingPatterns.map((p) => p.label);
+      const sev: Severity = missingPatterns.length >= 3 ? "critical" : "warning";
+      selFindings.push({
+        severity: sev,
+        title: `${missingPatterns.length} Bewegungsmuster fehlen komplett`,
+        detail:
+          `Nie trainiert: ${labels.join(", ")}. ` +
+          "Ein Körper, der nur kennt was er oft macht, wird einseitig stark und " +
+          "anfällig. Jedes Grundmuster sollte regelmäßig vorkommen.",
+      });
+      selScore -= missingPatterns.length >= 3 ? 28 : 14;
+      addPriority(sev, `Fehlende Bewegungsmuster ergänzen: ${labels.slice(0, 3).join(", ")}.`);
+    }
+  }
+
+  // Zettelchaos: viele Übungen, die nur einmal vorkommen → keine Progression messbar.
+  if (distinctExercises >= 6 && oneOffExercises / distinctExercises > 0.5) {
+    selFindings.push({
+      severity: "warning",
+      title: "Zu viel Übungs-Hopping",
+      detail:
+        `${oneOffExercises} von ${distinctExercises} Übungen hast du nur ein einziges Mal ` +
+        "gemacht. Wer ständig die Übungen wechselt, kann sich in keiner steigern — und " +
+        "Progression ist der eigentliche Wachstumstreiber. Leg dich auf einen Kern von " +
+        "Hauptübungen fest und steigere die über Wochen.",
+    });
+    selScore -= 16;
+    addPriority("warning", "Auf einen festen Kern an Hauptübungen festlegen und darin steigern.");
+  }
+
+  sections.push({
+    key: "selection",
+    title: "Übungsauswahl",
+    score: clamp(selScore),
+    summary:
+      mechSets > 0
+        ? `${round((compoundSets / mechSets) * 100)}% Grundübungen · ${coveredPatterns.length}/${PATTERNS.length} Bewegungsmuster · ${distinctExercises} Übungen.`
+        : "Noch keine Arbeitssätze für eine Bewertung der Übungsauswahl.",
+    metrics: [
+      { label: "Grundübungs-Sätze", value: String(compoundSets) },
+      { label: "Isolations-Sätze", value: String(isolationSets) },
+      { label: "Bewegungsmuster", value: `${coveredPatterns.length}/${PATTERNS.length}` },
+      { label: "Versch. Übungen", value: String(distinctExercises) },
+      { label: "Nur 1× gemacht", value: String(oneOffExercises) },
+    ],
+    findings: selFindings,
+  });
+
   /* ===== Kraftstandards (rel. Körpergewicht) ===== */
   const standards: StrengthStandard[] = [];
   const bw = profile.bodyweightKg;
@@ -742,6 +878,7 @@ export function analyze(
     volume: 1.0,
     balance: 1.0,
     intensity: 1.1,
+    selection: 1.2,
   };
   let wsum = 0;
   let acc = 0;
