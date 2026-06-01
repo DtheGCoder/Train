@@ -12,6 +12,7 @@ import {
   UserCog,
   ShieldCheck,
   LogOut,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/lib/actions";
@@ -24,6 +25,7 @@ const items = [
   { href: "/calendar", label: "Kalender", icon: CalendarDays },
   { href: "/history", label: "Verlauf", icon: History },
   { href: "/stats", label: "Statistik", icon: BarChart3 },
+  { href: "/analysis", label: "Analyse", icon: Activity },
 ];
 
 export function Nav({ user }: { user: SessionUser | null }) {

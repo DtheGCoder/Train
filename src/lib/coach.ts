@@ -403,27 +403,62 @@ export function recommendedRest(profile: CoachProfile): number {
 /* ---------------- Session-/Bereitschafts-Hinweise ---------------- */
 
 // Kontextueller Hinweis zu Beginn/auf der Übungsebene – nutzt erweiterte Daten.
+// Deckt möglichst viele Eventualitäten ab (Alter, Einschränkungen, Frequenz,
+// Ziel, Erfahrung, Equipment) und priorisiert die wichtigsten Hinweise zuerst.
 export function sessionAdvice(profile: CoachProfile): string[] {
   const tips: string[] = [];
   const a = age(profile);
-  if (a !== null && a >= 45) {
-    tips.push(
-      "Nimm dir heute extra Zeit zum Aufwärmen – Gelenke danken es dir.",
-    );
-  }
+
+  // Sicherheit zuerst: Einschränkungen und Alter.
   if (profile.limitations.trim()) {
     tips.push(
       `Beachte deine Einschränkung (${profile.limitations.trim()}) – bei Schmerz sofort abbrechen.`,
     );
   }
-  if (profile.trainingDaysPerWeek && profile.trainingDaysPerWeek >= 5) {
+  if (a !== null && a >= 55) {
     tips.push(
-      "Bei 5+ Einheiten/Woche zählt Erholung: Schlaf und Protein im Blick behalten.",
+      "Ab 55+: lange aufwärmen, Technik vor Last, und keine Maximalversuche ohne Sicherung.",
+    );
+  } else if (a !== null && a >= 45) {
+    tips.push("Nimm dir heute extra Zeit zum Aufwärmen – Gelenke danken es dir.");
+  }
+
+  // Erfahrung.
+  if (profile.experience === "beginner") {
+    tips.push(
+      "Als Einsteiger: sauberer Bewegungsablauf schlägt schweres Gewicht. Lieber eine Wdh in Reserve.",
+    );
+  } else if (profile.experience === "advanced") {
+    tips.push(
+      "Erfahren: Fortschritt kommt jetzt in kleinen Schritten – Mikro-Steigerungen und Variation zählen.",
     );
   }
-  if (profile.goal === "strength") {
-    tips.push("Kraftfokus: lieber sauberere, schwere Sätze als viele Wdh.");
+
+  // Frequenz / Erholung.
+  if (profile.trainingDaysPerWeek && profile.trainingDaysPerWeek >= 5) {
+    tips.push(
+      "Bei 5+ Einheiten/Woche zählt Erholung: Schlaf, Protein und alle 4–6 Wochen ein Deload.",
+    );
+  } else if (profile.trainingDaysPerWeek && profile.trainingDaysPerWeek <= 2) {
+    tips.push(
+      "Bei 1–2 Einheiten/Woche: setz auf Grundübungen (Ganzkörper), die viel auf einmal treffen.",
+    );
   }
+
+  // Ziel.
+  if (profile.goal === "strength") {
+    tips.push("Kraftfokus: lieber sauberere, schwere Sätze als viele Wdh – und längere Pausen.");
+  } else if (profile.goal === "hypertrophy") {
+    tips.push("Muskelaufbau: jeden Arbeitssatz nah ans Limit (1–3 Wdh Reserve), Volumen über die Woche steuern.");
+  } else if (profile.goal === "endurance") {
+    tips.push("Kraftausdauer: kurze Pausen halten den Reiz – Tempo und saubere Form trotzdem behalten.");
+  }
+
+  // Equipment-Einschränkung.
+  if (profile.availableEquipment.trim()) {
+    tips.push("Begrenztes Equipment: nutze Tempo, Pausen und Wdh, um den Reiz trotzdem hoch zu halten.");
+  }
+
   return tips;
 }
 

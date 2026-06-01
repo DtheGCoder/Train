@@ -2,6 +2,7 @@
 // Start:    pm2 start ecosystem.config.js
 // Neuladen: pm2 reload ecosystem.config.js
 // Logs:     pm2 logs train
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- CommonJS-Config für PM2
 const { execSync } = require("node:child_process");
 
 // Aktuellen Commit ermitteln: bevorzugt die vom Deploy gesetzte Variable,

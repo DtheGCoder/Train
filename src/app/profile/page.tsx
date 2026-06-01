@@ -5,7 +5,7 @@ import { loadCoachProfile } from "@/lib/coach-data";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CoachProfileForm } from "@/components/coach-profile-form";
-import { Sparkles, ShieldCheck, LogOut } from "lucide-react";
+import { Sparkles, ShieldCheck, LogOut, Activity, ChevronRight } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,21 @@ export default async function ProfilePage() {
           Grenzen verschieben sich mit der Zeit von selbst.
         </p>
       </Card>
+
+      <Link
+        href="/analysis"
+        className="flex items-center gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-primary/40 hover:bg-primary/5"
+      >
+        <Activity className="size-5 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">Coach-Analyse ansehen</p>
+          <p className="text-sm text-muted">
+            Schonungslos ehrliche Auswertung deines Trainings — Konsistenz, Balance,
+            Kraftentwicklung und konkrete Prioritäten.
+          </p>
+        </div>
+        <ChevronRight className="size-5 shrink-0 text-muted" />
+      </Link>
 
       <CoachProfileForm profile={p} equipment={equipment} />
 
