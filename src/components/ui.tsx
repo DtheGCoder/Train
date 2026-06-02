@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { Info } from "lucide-react";
 
 export function Card({
   className,
@@ -153,6 +154,37 @@ export function EmptyState({
         <p className="mt-1 max-w-xs text-sm text-muted">{description}</p>
       )}
       {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+// Erklär-/Hinweisbox mit Info-Icon. „primary" für hervorgehobene Hinweise.
+export function InfoBox({
+  children,
+  variant = "default",
+  className,
+}: {
+  children: React.ReactNode;
+  variant?: "default" | "primary";
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex gap-2.5 rounded-lg border px-3 py-2.5 text-xs leading-relaxed",
+        variant === "primary"
+          ? "border-primary/30 bg-primary/10 text-foreground"
+          : "border-border bg-surface-2 text-muted",
+        className,
+      )}
+    >
+      <Info
+        className={cn(
+          "mt-0.5 size-4 shrink-0",
+          variant === "primary" ? "text-primary" : "text-muted",
+        )}
+      />
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

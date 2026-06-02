@@ -1,11 +1,19 @@
 import Link from "next/link";
-import { PageHeader, Card, Button } from "@/components/ui";
+import { PageHeader, Card, Button, InfoBox } from "@/components/ui";
 import { logout } from "@/lib/actions";
 import { loadCoachProfile } from "@/lib/coach-data";
+import { sessionAdvice } from "@/lib/coach";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CoachProfileForm } from "@/components/coach-profile-form";
-import { Sparkles, ShieldCheck, LogOut, Activity, ChevronRight } from "lucide-react";
+import {
+  Sparkles,
+  ShieldCheck,
+  LogOut,
+  Activity,
+  ChevronRight,
+  Lightbulb,
+} from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +26,9 @@ export default async function ProfilePage() {
       orderBy: { nameDe: "asc" },
     }),
   ]);
+
+  // Personalisierte Coach-Tipps aus dem gespeicherten Profil.
+  const tips = sessionAdvice(p);
 
   return (
     <div className="space-y-5">
@@ -50,6 +61,31 @@ export default async function ProfilePage() {
         </div>
         <ChevronRight className="size-5 shrink-0 text-muted" />
       </Link>
+
+      {/* Personalisierte Coach-Tipps + Begriffs-Erklärung */}
+      {tips.length > 0 && (
+        <Card className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Lightbulb className="size-5 text-primary" />
+            <h2 className="font-semibold">Coach-Tipps für dich</h2>
+          </div>
+          <ul className="space-y-2">
+            {tips.map((t, i) => (
+              <li key={i} className="flex gap-2 text-sm text-muted">
+                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/70" />
+                <span className="leading-snug">{t}</span>
+              </li>
+            ))}
+          </ul>
+          <InfoBox>
+            <span className="font-semibold text-foreground">RPE & RIR:</span> Der
+            RPE (1–10) sagt, wie schwer ein Satz war; RIR (Reps in Reserve) sind
+            die Wiederholungen, die am Satzende noch möglich wären. RPE&nbsp;8 ≈
+            2 RIR (zwei saubere Wdh. hätten noch gepasst). Trägst du den RPE ein,
+            steuert der Coach Last und Pausen spürbar genauer.
+          </InfoBox>
+        </Card>
+      )}
 
       <CoachProfileForm profile={p} equipment={equipment} />
 

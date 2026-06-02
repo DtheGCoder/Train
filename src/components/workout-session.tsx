@@ -44,6 +44,8 @@ import {
   recommendedRest,
   coachWorkoutSummary,
   sessionExerciseAdvice,
+  warmupPlan,
+  tempoCue,
   type WorkoutSummary,
 } from "@/lib/coach";
 import {
@@ -563,6 +565,15 @@ export function WorkoutSession({
         const setsDone = wsets.filter((s) => s.isCompleted).length;
         const exDone = setsPlanned > 0 && setsDone === setsPlanned;
         const nextName = exDone ? (nextOpenExercise(ex.id)?.name ?? null) : null;
+        const rec = recommendNextSet(liveE1RM(ex), coach.profile, {
+          state: sessionStateOf(ex),
+          insight: insightOf(ex),
+        });
+        // Aufwärm-Rampe nur vor dem ersten Arbeitssatz vorschlagen.
+        const warmup =
+          setsDone === 0 && rec.hasBaseline
+            ? warmupPlan(rec.weight, coach.profile)
+            : [];
         return (
           <Reveal key={ex.id} animate={animExIds.has(ex.id)}>
           <div className="rounded-xl border border-border bg-surface">
@@ -596,10 +607,7 @@ export function WorkoutSession({
 
             <div className="px-2 py-2">
               <CoachCard
-                rec={recommendNextSet(liveE1RM(ex), coach.profile, {
-                  state: sessionStateOf(ex),
-                  insight: insightOf(ex),
-                })}
+                rec={rec}
                 reaction={coachMsg[ex.id] ?? null}
                 oneRm={liveE1RM(ex)}
                 onLimitTest={() => handleLimitTest(ex)}
@@ -607,6 +615,8 @@ export function WorkoutSession({
                 nextExerciseName={nextName}
                 setsDone={setsDone}
                 setsPlanned={setsPlanned}
+                warmup={warmup}
+                tempo={tempoCue(coach.profile)}
               />
 
               {/* Spaltenkopf */}

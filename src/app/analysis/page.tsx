@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
-import { PageHeader, Card, EmptyState, LinkButton } from "@/components/ui";
+import { PageHeader, Card, EmptyState, LinkButton, InfoBox } from "@/components/ui";
 import { loadCoachProfile } from "@/lib/coach-data";
 import {
   analyze,
@@ -288,6 +288,14 @@ export default async function AnalysisPage() {
         </div>
         <p className="text-sm leading-relaxed">{a.verdict}</p>
       </Card>
+
+      <InfoBox>
+        <span className="font-semibold text-foreground">So liest du das:</span>{" "}
+        Der Score (0–100) fasst mehrere Bereiche zusammen – Konsistenz, Volumen,
+        Muskelbalance, Kraftentwicklung, Intensität & Zielausrichtung. Er rechnet
+        rein mit deinen eigenen Daten, offline und nachvollziehbar. Arbeite die
+        Punkte im Plan von oben nach unten ab – das bewegt am meisten.
+      </InfoBox>
 
       {/* Persönlicher, datengetriebener Plan */}
       <PlanCard plan={a.plan} />

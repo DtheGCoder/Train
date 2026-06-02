@@ -872,6 +872,20 @@ export function rpeLabel(rpe: number): string {
   return "Leicht – viel Reserve";
 }
 
+/* ---------------- Technik-/Tempo-Hinweis ---------------- */
+
+// Kurzer Ausführungs-Hinweis passend zum Ziel – Technik vor Ego.
+export function tempoCue(profile: CoachProfile): string {
+  switch (profile.goal) {
+    case "strength":
+      return "Kontrolliert ablassen (2–3 s), explosiv aber sauber drücken, Spannung halten. Technik vor Last.";
+    case "endurance":
+      return "Zügiges, gleichmäßiges Tempo, voller Bewegungsumfang, ruhig weiteratmen. Form geht vor Tempo.";
+    default:
+      return "1–2 s kontrolliert ablassen, voller Bewegungsumfang, kein Schwung – spür den Zielmuskel.";
+  }
+}
+
 /* ---------------- Übungs-Empfehlung am Ende der Einheit ---------------- */
 
 // Evidenz-orientierte Richtwerte für harte Arbeitssätze JE Muskelgruppe PRO
