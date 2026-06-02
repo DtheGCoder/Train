@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, ChevronRight } from "lucide-react";
+import { Search, ChevronRight, PlayCircle } from "lucide-react";
 import { Input, Select, Badge, EmptyState } from "@/components/ui";
+import { hasExerciseDemo } from "@/lib/exercise-animation";
 import { cn } from "@/lib/utils";
 
 export type ExerciseItem = {
@@ -92,7 +93,15 @@ export function ExerciseBrowser({
             const content = (
               <div className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-surface-2">
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{it.nameDe}</p>
+                  <p className="flex items-center gap-1.5 font-medium">
+                    <span className="truncate">{it.nameDe}</span>
+                    {hasExerciseDemo(it.nameEn) && (
+                      <PlayCircle
+                        className="size-4 shrink-0 text-primary"
+                        aria-label="Mit Video-Anleitung"
+                      />
+                    )}
+                  </p>
                   <div className="mt-1 flex flex-wrap gap-1.5">
                     <Badge className="bg-primary/15 text-primary">
                       {it.muscleName}

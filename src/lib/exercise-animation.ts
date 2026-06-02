@@ -17,3 +17,8 @@ export function getExerciseDemo(nameEn: string): ExerciseDemo {
   const seg = encodeURIComponent(folder);
   return { frames: [`${CDN}/${seg}/0.jpg`, `${CDN}/${seg}/1.jpg`] };
 }
+
+// Hat die Übung eine Bewegungs-Demo? (für das Video-Symbol in der Liste)
+export function hasExerciseDemo(nameEn: string): boolean {
+  return Boolean(exerciseDemoMap[nameEn.trim().toLowerCase()]);
+}
