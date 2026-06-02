@@ -99,7 +99,7 @@ export default async function ExerciseDetail({
           Übungsdaten abgeleitet – immer korrekt). */}
       <Card>
         <h2 className="mb-2 text-sm font-semibold">Trainierte Muskeln</h2>
-        <div className="mx-auto max-w-[20rem]">
+        <div className="mx-auto max-w-md">
           <MuscleMap
             primary={exercise.primaryMuscle.slug}
             secondary={secondary}
