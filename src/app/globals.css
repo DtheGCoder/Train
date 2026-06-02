@@ -233,24 +233,19 @@ input[type="number"] {
   animation: confettiFall linear both;
 }
 
-/* Bewegungs-Demo: weiche Überblendung zwischen Start- und Endpose */
-@keyframes demoFadeA {
-  0%, 40% { opacity: 1; }
-  50%, 90% { opacity: 0; }
-  100% { opacity: 1; }
-}
+/* Bewegungs-Demo: das untere Bild (Startpose) bleibt IMMER deckend sichtbar,
+   nur die Endpose blendet darüber ein/aus → keine Lücke, kein Weiß-Blitz. */
 @keyframes demoFadeB {
-  0%, 40% { opacity: 0; }
-  50%, 90% { opacity: 1; }
-  100% { opacity: 0; }
+  0%, 12% { opacity: 0; }
+  42%, 58% { opacity: 1; }
+  88%, 100% { opacity: 0; }
 }
 .demo-a {
   opacity: 1;
-  animation: demoFadeA 2.6s ease-in-out infinite;
 }
 .demo-b {
   opacity: 0;
-  animation: demoFadeB 2.6s ease-in-out infinite;
+  animation: demoFadeB 2.8s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
