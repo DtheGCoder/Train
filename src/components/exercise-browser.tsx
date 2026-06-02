@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, ChevronRight, PlayCircle } from "lucide-react";
+import { Search, ChevronRight, PlayCircle, Info, Plus } from "lucide-react";
 import { Input, Select, Badge, EmptyState } from "@/components/ui";
 import { hasExerciseDemo } from "@/lib/exercise-animation";
 import { cn } from "@/lib/utils";
@@ -90,47 +90,60 @@ export function ExerciseBrowser({
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
           {filtered.map((it) => {
-            const content = (
-              <div className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-surface-2">
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 font-medium">
-                    <span className="truncate">{it.nameDe}</span>
-                    {hasExerciseDemo(it.nameEn) && (
-                      <PlayCircle
-                        className="size-4 shrink-0 text-primary"
-                        aria-label="Mit Video-Anleitung"
-                      />
-                    )}
-                  </p>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    <Badge className="bg-primary/15 text-primary">
-                      {it.muscleName}
-                    </Badge>
-                    {it.equipmentName && <Badge>{it.equipmentName}</Badge>}
-                    {it.isCustom && (
-                      <Badge className="bg-success/15 text-success">Eigene</Badge>
-                    )}
-                  </div>
+            const info = (
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 font-medium">
+                  <span className="truncate">{it.nameDe}</span>
+                  {hasExerciseDemo(it.nameEn) && (
+                    <PlayCircle
+                      className="size-4 shrink-0 text-primary"
+                      aria-label="Mit Video-Anleitung"
+                    />
+                  )}
+                </p>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  <Badge className="bg-primary/15 text-primary">
+                    {it.muscleName}
+                  </Badge>
+                  {it.equipmentName && <Badge>{it.equipmentName}</Badge>}
+                  {it.isCustom && (
+                    <Badge className="bg-success/15 text-success">Eigene</Badge>
+                  )}
                 </div>
-                <ChevronRight className="size-4 shrink-0 text-muted" />
               </div>
             );
 
             if (selectable) {
+              // Zeile antippen = zum Workout hinzufügen; Info-Button = Detailansicht.
               return (
-                <li key={it.id}>
+                <li key={it.id} className="flex items-center hover:bg-surface-2">
                   <button
                     onClick={() => onPick?.(it)}
-                    className="w-full text-left"
+                    className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left"
+                    aria-label={`${it.nameDe} zum Workout hinzufügen`}
                   >
-                    {content}
+                    {info}
+                    <Plus className="ml-auto size-5 shrink-0 text-primary" />
                   </button>
+                  <Link
+                    href={`/exercises/${it.id}`}
+                    aria-label={`${it.nameDe} – Details ansehen`}
+                    className="flex size-12 shrink-0 items-center justify-center border-l border-border text-muted transition-colors hover:text-foreground active:text-foreground"
+                  >
+                    <Info className="size-5" />
+                  </Link>
                 </li>
               );
             }
             return (
               <li key={it.id}>
-                <Link href={`/exercises/${it.id}`}>{content}</Link>
+                <Link
+                  href={`/exercises/${it.id}`}
+                  className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-surface-2"
+                >
+                  {info}
+                  <ChevronRight className="size-4 shrink-0 text-muted" />
+                </Link>
               </li>
             );
           })}

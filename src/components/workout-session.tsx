@@ -20,7 +20,9 @@ import {
   Flag,
   Loader2,
   ArrowRight,
+  Info,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { ExerciseBrowser, type ExerciseItem } from "@/components/exercise-browser";
@@ -566,7 +568,13 @@ export function WorkoutSession({
           <div className="rounded-xl border border-border bg-surface">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <div className="min-w-0">
-                <p className="font-semibold">{ex.name}</p>
+                <Link
+                  href={`/exercises/${ex.exerciseId}`}
+                  className="inline-flex items-center gap-1.5 font-semibold hover:text-primary active:text-primary"
+                >
+                  <span className="truncate">{ex.name}</span>
+                  <Info className="size-3.5 shrink-0 text-muted" aria-label="Details ansehen" />
+                </Link>
                 <p className="text-xs text-muted">{ex.muscleName}</p>
                 {prev && prev.length > 0 && (
                   <p className="mt-0.5 truncate text-xs text-muted">
