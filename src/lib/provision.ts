@@ -50,9 +50,15 @@ export async function provisionUserContent(db: Db, userId: string) {
     });
   }
 
-  // Hat der Nutzer schon einen eigenen Katalog? Dann nichts weiter tun.
-  const exerciseCount = await db.exercise.count({ where: { userId } });
-  if (exerciseCount > 0) return;
+  // Bestehenden Katalog des Nutzers laden. Neue Accounts bekommen den vollen
+  // Katalog + Vorlagen; bestehende Accounts werden idempotent „aufgefüllt"
+  // (fehlende Übungen aus den Stammdaten ergänzt), ohne Duplikate. So landen
+  // neue Katalog-Übungen beim nächsten Seed auch bei bestehenden Nutzern.
+  const existingEx = await db.exercise.findMany({
+    where: { userId },
+    select: { id: true, nameDe: true },
+  });
+  const isFresh = existingEx.length === 0;
 
   // Slug -> id-Maps aus den globalen Stammdaten.
   const muscleMap = new Map(
@@ -62,9 +68,10 @@ export async function provisionUserContent(db: Db, userId: string) {
     (await db.equipment.findMany()).map((e) => [e.slug, e.id]),
   );
 
-  // Eigenen Übungskatalog anlegen; nameDe -> exerciseId für die Vorlagen merken.
-  const exByName = new Map<string, string>();
+  // nameDe -> exerciseId (inkl. bereits vorhandener Übungen, für Vorlagen).
+  const exByName = new Map<string, string>(existingEx.map((e) => [e.nameDe, e.id]));
   for (const ex of exercises) {
+    if (exByName.has(ex.nameDe)) continue; // schon vorhanden -> nicht doppeln
     const primaryMuscleId = muscleMap.get(ex.primary);
     if (!primaryMuscleId) throw new Error(`Unknown muscle slug: ${ex.primary}`);
     const equipmentId = ex.equipment ? equipMap.get(ex.equipment) ?? null : null;
@@ -86,6 +93,9 @@ export async function provisionUserContent(db: Db, userId: string) {
     });
     exByName.set(ex.nameDe, created.id);
   }
+
+  // Vorlagen-Routinen nur für neue Accounts anlegen (Auffüllen endet hier).
+  if (!isFresh) return;
 
   // Vorlagen-Routinen als eigene Routinen des Nutzers anlegen.
   for (const preset of presets) {

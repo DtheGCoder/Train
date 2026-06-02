@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { Card, Badge, Button } from "@/components/ui";
+import { MuscleMap } from "@/components/muscle-map";
 import { mechanicLabels, forceLabels, categoryLabels } from "@/lib/labels";
+import { muscleGroups } from "@/lib/seed-data";
 import { deleteExercise } from "@/lib/actions";
 import { epley1RM } from "@/lib/utils";
 import { format } from "date-fns";
@@ -63,6 +65,8 @@ export default async function ExerciseDetail({
   const secondary = exercise.secondaryMuscles
     ? exercise.secondaryMuscles.split(",").filter(Boolean)
     : [];
+  const muscleName = (slug: string) =>
+    muscleGroups.find((m) => m.slug === slug)?.nameDe ?? slug;
 
   return (
     <div className="space-y-5">
@@ -91,11 +95,35 @@ export default async function ExerciseDetail({
         )}
       </div>
 
-      {secondary.length > 0 && (
-        <p className="text-sm text-muted">
-          Sekundär: {secondary.join(", ")}
-        </p>
-      )}
+      {/* Muskelkarte: hebt genau die trainierten Muskeln hervor (aus den
+          Übungsdaten abgeleitet – immer korrekt). */}
+      <Card>
+        <h2 className="mb-2 text-sm font-semibold">Trainierte Muskeln</h2>
+        <div className="mx-auto max-w-[20rem]">
+          <MuscleMap
+            primary={exercise.primaryMuscle.slug}
+            secondary={secondary}
+          />
+        </div>
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs">
+          <span className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-full bg-primary" />
+            Primär: {exercise.primaryMuscle.nameDe}
+          </span>
+          {secondary.length > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span
+                className="size-2.5 rounded-full"
+                style={{
+                  background:
+                    "color-mix(in srgb, var(--primary) 42%, transparent)",
+                }}
+              />
+              Sekundär: {secondary.map(muscleName).join(", ")}
+            </span>
+          )}
+        </div>
+      </Card>
 
       {exercise.instructions && (
         <Card>
