@@ -3,11 +3,32 @@ import { requireUser } from "@/lib/auth";
 import { PageHeader, Card, EmptyState } from "@/components/ui";
 import { StatsCharts } from "@/components/stats-charts";
 import { MuscleTrends } from "@/components/stats-muscle-trends";
+import { MuscleGroupRadar, type RadarPoint } from "@/components/stats-muscle-radar";
 import { ResetDataButton } from "@/components/reset-data-button";
 import { format, startOfWeek } from "date-fns";
 import { de } from "date-fns/locale";
 
 export const dynamic = "force-dynamic";
+
+// Spezifische Muskeln → 6 Hauptgruppen (Radar). fullbody/cardio fließen nicht
+// in eine einzelne Achse ein und werden hier ausgelassen.
+const MUSCLE_GROUP: Record<string, string> = {
+  chest: "Brust",
+  back: "Rückenmuskulatur",
+  lats: "Rückenmuskulatur",
+  traps: "Rückenmuskulatur",
+  shoulders: "Schultern",
+  biceps: "Arme",
+  triceps: "Arme",
+  forearms: "Arme",
+  quads: "Beine",
+  hamstrings: "Beine",
+  glutes: "Beine",
+  calves: "Beine",
+  abs: "Rumpf",
+  obliques: "Rumpf",
+  lowerback: "Rumpf",
+};
 
 export default async function StatsPage() {
   const user = await requireUser();
@@ -38,32 +59,15 @@ export default async function StatsPage() {
 
   // Volumen pro Woche
   const weekMap = new Map<string, number>();
-  // Volumen pro Muskelgruppe
-  const muscleMap = new Map<string, number>();
-
   for (const w of workouts) {
     const weekStart = startOfWeek(w.startedAt, { weekStartsOn: 1 });
     const key = format(weekStart, "dd.MM.", { locale: de });
     weekMap.set(key, (weekMap.get(key) ?? 0) + w.totalVolume);
-
-    for (const we of w.exercises) {
-      const muscle = we.exercise.primaryMuscle.nameDe;
-      const vol = we.sets
-        .filter((s) => s.isCompleted)
-        .reduce((sum, s) => sum + s.weight * s.reps, 0);
-      muscleMap.set(muscle, (muscleMap.get(muscle) ?? 0) + vol);
-    }
   }
 
   const volumeByWeek = Array.from(weekMap.entries())
     .slice(-12)
     .map(([week, volume]) => ({ week, volume: Math.round(volume) }));
-
-  const volumeByMuscle = Array.from(muscleMap.entries())
-    .filter(([, v]) => v > 0)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([muscle, volume]) => ({ muscle, volume: Math.round(volume) }));
 
   const totalVolume = workouts.reduce((s, w) => s + w.totalVolume, 0);
 
@@ -86,6 +90,30 @@ export default async function StatsPage() {
   const trendData = [...dayMuscle.entries()].map(([k, v]) => {
     const [date, muscle] = k.split("__");
     return { date, muscle, volume: v.volume, sets: v.sets };
+  });
+
+  // Radar-Daten: pro Tag & Hauptgruppe Wdh./Sätze/Volumen (Client filtert nach
+  // Zeitraum und Metrik).
+  const radarMap = new Map<string, { reps: number; sets: number; volume: number }>();
+  for (const w of workouts) {
+    const day = format(w.startedAt, "yyyy-MM-dd");
+    for (const we of w.exercises) {
+      const group = MUSCLE_GROUP[we.exercise.primaryMuscle.slug];
+      if (!group) continue;
+      for (const s of we.sets) {
+        if (!s.isCompleted) continue;
+        const key = `${day}__${group}`;
+        const cur = radarMap.get(key) ?? { reps: 0, sets: 0, volume: 0 };
+        cur.reps += s.reps;
+        cur.sets += 1;
+        cur.volume += s.weight * s.reps;
+        radarMap.set(key, cur);
+      }
+    }
+  }
+  const radarData: RadarPoint[] = [...radarMap.entries()].map(([k, v]) => {
+    const [date, group] = k.split("__");
+    return { date, group, ...v };
   });
 
   const prs = await db.personalRecord.findMany({
@@ -121,7 +149,9 @@ export default async function StatsPage() {
         </Card>
       </div>
 
-      <StatsCharts volumeByWeek={volumeByWeek} volumeByMuscle={volumeByMuscle} />
+      <MuscleGroupRadar data={radarData} />
+
+      <StatsCharts volumeByWeek={volumeByWeek} />
 
       <div>
         <h2 className="mb-2 font-semibold">Verlauf je Muskelgruppe</h2>

@@ -10,6 +10,7 @@ import {
   type Severity,
   type Finding,
   type AnalysisSection,
+  type PersonalTip,
 } from "@/lib/coach-analysis";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -23,9 +24,58 @@ import {
   XCircle,
   Target,
   Dumbbell,
+  ClipboardList,
+  ArrowUpCircle,
+  Wrench,
+  Eye,
+  CheckCircle,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
+
+/* ---------------- Personalisierter Plan ---------------- */
+
+const TIP_STYLE: Record<
+  PersonalTip["kind"],
+  { text: string; ring: string; Icon: typeof Info; label: string }
+> = {
+  do: { text: "text-primary", ring: "border-primary/30", Icon: ArrowUpCircle, label: "Tun" },
+  fix: { text: "text-amber-400", ring: "border-amber-400/30", Icon: Wrench, label: "Fixen" },
+  watch: { text: "text-danger", ring: "border-danger/30", Icon: Eye, label: "Achtgeben" },
+  keep: { text: "text-success", ring: "border-success/30", Icon: CheckCircle, label: "Beibehalten" },
+};
+
+function PlanCard({ plan }: { plan: PersonalTip[] }) {
+  if (plan.length === 0) return null;
+  return (
+    <Card className="space-y-3 border-primary/30 bg-primary/5">
+      <div className="flex items-center gap-2">
+        <ClipboardList className="size-5 text-primary" />
+        <h2 className="font-semibold">Dein persönlicher Plan</h2>
+      </div>
+      <p className="-mt-1 text-xs text-muted">
+        Konkret aus deinen Daten abgeleitet – Schritt für Schritt abarbeiten.
+      </p>
+      <ol className="space-y-2">
+        {plan.map((t, i) => {
+          const s = TIP_STYLE[t.kind];
+          return (
+            <li
+              key={i}
+              className={`flex gap-3 rounded-lg border ${s.ring} bg-surface px-3 py-2.5`}
+            >
+              <s.Icon className={`mt-0.5 size-4 shrink-0 ${s.text}`} />
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">{t.title}</p>
+                <p className="mt-0.5 text-xs leading-snug text-muted">{t.detail}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </Card>
+  );
+}
 
 /* ---------------- Darstellungs-Helfer (Server-Komponenten) ---------------- */
 
@@ -238,6 +288,9 @@ export default async function AnalysisPage() {
         </div>
         <p className="text-sm leading-relaxed">{a.verdict}</p>
       </Card>
+
+      {/* Persönlicher, datengetriebener Plan */}
+      <PlanCard plan={a.plan} />
 
       {/* Prioritäten */}
       <Card className="space-y-3">

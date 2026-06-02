@@ -8,6 +8,7 @@ import { differenceInCalendarDays, startOfWeek, format } from "date-fns";
 import {
   e1rm,
   age,
+  repRange,
   GOAL_CONFIG,
   GOAL_LABELS,
   EXPERIENCE_LABELS,
@@ -87,18 +88,155 @@ export type StrengthStandard = {
   nextRatio: number | null;
 };
 
+// Ein konkreter, aus den EIGENEN Daten abgeleiteter Coaching-Tipp.
+export type PersonalTip = {
+  kind: "do" | "fix" | "keep" | "watch";
+  title: string; // knackige Kernaussage mit echten Zahlen/Namen
+  detail: string; // konkrete Handlungsanweisung
+};
+
 export type Analysis = {
   hasData: boolean;
   score: number; // 0-100 gesamt
   grade: string; // Schulnote-artiges Label
   headline: string;
   verdict: string; // harter, ehrlicher Absatz
+  plan: PersonalTip[]; // 100% personalisierter Maßnahmenplan
   sections: AnalysisSection[];
   lifts: LiftProgress[];
   standards: StrengthStandard[];
   priorities: string[];
   generatedAt: Date;
 };
+
+// Slug → 6 Hauptgruppen (für die Volumen-Verteilung im Plan).
+const PLAN_GROUP: Record<string, string> = {
+  chest: "Brust",
+  back: "Rückenmuskulatur",
+  lats: "Rückenmuskulatur",
+  traps: "Rückenmuskulatur",
+  shoulders: "Schultern",
+  biceps: "Arme",
+  triceps: "Arme",
+  forearms: "Arme",
+  quads: "Beine",
+  hamstrings: "Beine",
+  glutes: "Beine",
+  calves: "Beine",
+  abs: "Rumpf",
+  obliques: "Rumpf",
+  lowerback: "Rumpf",
+};
+
+// Baut einen konkreten, datengetriebenen Maßnahmenplan: jeder Tipp nennt echte
+// Übungen, Zahlen und Schwachstellen aus genau DIESEN Trainingsdaten.
+function buildPersonalPlan(
+  profile: CoachProfile,
+  workouts: AnalysisWorkout[],
+  lifts: LiftProgress[],
+  now: number,
+): PersonalTip[] {
+  const tips: PersonalTip[] = [];
+  if (workouts.length === 0) return tips;
+
+  const last28 = workouts.filter((w) => now - w.startedAt.getTime() <= 28 * DAY);
+  const spanDays = Math.max(
+    1,
+    Math.min(28, Math.round((now - workouts[0].startedAt.getTime()) / DAY) || 1),
+  );
+  const weeks = Math.max(1, spanDays / 7);
+
+  // 1) Frequenz: tatsächlich vs. Ziel.
+  const perWeek = round(last28.length / Math.min(4, weeks), 1);
+  const targetDays =
+    profile.trainingDaysPerWeek ?? (profile.goal === "strength" ? 4 : 3);
+  if (perWeek + 0.3 < targetDays) {
+    tips.push({
+      kind: "fix",
+      title: `Häufiger trainieren: zuletzt ~${perWeek}×/Woche statt ${targetDays}×`,
+      detail: `Konstanz schlägt die perfekte Einzel-Session. Trag dir ${targetDays} feste Trainingstermine pro Woche in den Kalender und behandle sie wie Termine, die nicht ausfallen.`,
+    });
+  }
+
+  // 2) Schwächste Hauptgruppe nach harten Sätzen/Woche.
+  const groupSets = new Map<string, number>();
+  for (const w of last28)
+    for (const ex of w.exercises) {
+      const g = PLAN_GROUP[ex.muscleSlug];
+      if (!g) continue;
+      groupSets.set(g, (groupSets.get(g) ?? 0) + ex.sets.filter(isWorking).length);
+    }
+  const ALL_GROUPS = ["Brust", "Rückenmuskulatur", "Schultern", "Arme", "Beine", "Rumpf"];
+  const ranked = ALL_GROUPS.map((g) => ({
+    g,
+    perWk: (groupSets.get(g) ?? 0) / Math.min(4, weeks),
+  })).sort((a, b) => a.perWk - b.perWk);
+  const weakest = ranked[0];
+  if (weakest && weakest.perWk < 8) {
+    tips.push({
+      kind: "do",
+      title: `${weakest.g} kommt zu kurz: ~${round(weakest.perWk, 1)} harte Sätze/Woche`,
+      detail: `Für gleichmäßige Entwicklung gelten 10–20 harte Sätze/Woche je Hauptgruppe als Richtwert. Häng ${weakest.g} 1–2 zusätzliche Übungen an, bis du dort ~10 Sätze/Woche erreichst.`,
+    });
+  }
+
+  // 3) Stagnierender/rückläufiger Lift – beim Namen genannt.
+  const stalling =
+    lifts.find((l) => l.trend === "down") ??
+    lifts.find((l) => l.trend === "flat" && l.sessions >= 3 && l.daysSinceBest >= 21);
+  if (stalling) {
+    const status =
+      stalling.trend === "down"
+        ? `${stalling.changePct}% gegenüber dem Start`
+        : `seit ${stalling.daysSinceBest} Tagen kein neuer Bestwert`;
+    tips.push({
+      kind: "watch",
+      title: `${stalling.name} klemmt (${status}, aktuell ~${stalling.lastE1RM} kg e1RM)`,
+      detail: `Nimm die Arbeitslast eine Woche bewusst ~10 % zurück und arbeite technisch sauber, dann in 2,5-kg-Schritten wieder hoch. Alternativ erst die Wiederholungen ans obere Spannenende bringen, bevor die Last steigt.`,
+    });
+  }
+
+  // 4) Bester Lift – verstärken.
+  const rising = [...lifts]
+    .filter((l) => l.trend === "up")
+    .sort((a, b) => b.changePct - a.changePct)[0];
+  if (rising) {
+    tips.push({
+      kind: "keep",
+      title: `${rising.name} läuft rund (+${rising.changePct}%)`,
+      detail: `Genau so weiter: erst Wiederholungen in der Spanne aufbauen, dann Last in kleinen Schritten. Nicht hetzen – der Trend stimmt, jede Einheit zählt auf das Konto ein.`,
+    });
+  }
+
+  // 5) Zielspanne + RPE-Logging.
+  const { low, high } = repRange(profile);
+  tips.push({
+    kind: "do",
+    title: `Zielspanne ${low}–${high} Wdh für ${GOAL_LABELS[profile.goal]}`,
+    detail: `Halte deine Arbeitssätze in ${low}–${high} Wiederholungen mit 1–2 Wdh Reserve. Trag den RPE jedes Satzes ein – damit steuere ich Last und Pausen für dich präzise.`,
+  });
+
+  // 6) Einschränkungen ernst nehmen.
+  if (profile.limitations.trim()) {
+    tips.push({
+      kind: "watch",
+      title: `Rücksicht auf: ${profile.limitations.trim()}`,
+      detail: `Wähle Übungen, die diese Region nicht reizen, wärm sie zusätzlich auf und brich bei Schmerz (nicht zu verwechseln mit Anstrengung) sofort ab.`,
+    });
+  }
+
+  // 7) Körpergewicht für Kraftstandards.
+  if (!profile.bodyweightKg) {
+    tips.push({
+      kind: "do",
+      title: "Körpergewicht im Profil eintragen",
+      detail:
+        "Ohne dein Körpergewicht kann ich keine Kraftstandards (relativ zum KG) berechnen und deine Lifts nicht einordnen. Eine Minute im Profil – großer Mehrwert.",
+    });
+  }
+
+  return tips.slice(0, 6);
+}
 
 /* ---------------- Helfer ---------------- */
 
@@ -259,6 +397,7 @@ export function analyze(
         "Du hast noch kein Workout abgeschlossen. Es gibt nichts schönzureden " +
         "und nichts zu kritisieren — fang an zu trainieren, dann zerlege ich " +
         "deine Daten Stück für Stück.",
+      plan: [],
       sections: [],
       lifts: [],
       standards: [],
@@ -1182,6 +1321,7 @@ export function analyze(
     grade: gradeFor(overall),
     headline,
     verdict,
+    plan: buildPersonalPlan(profile, done, topLifts, now.getTime()),
     sections,
     lifts: topLifts,
     standards,
