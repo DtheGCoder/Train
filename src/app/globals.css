@@ -233,6 +233,26 @@ input[type="number"] {
   animation: confettiFall linear both;
 }
 
+/* Bewegungs-Demo: weiche Überblendung zwischen Start- und Endpose */
+@keyframes demoFadeA {
+  0%, 40% { opacity: 1; }
+  50%, 90% { opacity: 0; }
+  100% { opacity: 1; }
+}
+@keyframes demoFadeB {
+  0%, 40% { opacity: 0; }
+  50%, 90% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.demo-a {
+  opacity: 1;
+  animation: demoFadeA 2.6s ease-in-out infinite;
+}
+.demo-b {
+  opacity: 0;
+  animation: demoFadeB 2.6s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .aurora-a,
   .aurora-b,
@@ -241,7 +261,9 @@ input[type="number"] {
   .error-shake,
   .finish-overlay,
   .finish-pop,
-  .finish-rise {
+  .finish-rise,
+  .demo-a,
+  .demo-b {
     animation: none;
   }
   /* Konfetti komplett weglassen, wenn Bewegung reduziert werden soll */

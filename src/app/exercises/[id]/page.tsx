@@ -5,6 +5,8 @@ import Link from "next/link";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { Card, Badge, Button } from "@/components/ui";
 import { MuscleMap } from "@/components/muscle-map";
+import { ExerciseAnimation } from "@/components/exercise-animation";
+import { getExerciseDemo } from "@/lib/exercise-animation";
 import { mechanicLabels, forceLabels, categoryLabels } from "@/lib/labels";
 import { muscleGroups } from "@/lib/seed-data";
 import { deleteExercise } from "@/lib/actions";
@@ -68,6 +70,9 @@ export default async function ExerciseDetail({
   const muscleName = (slug: string) =>
     muscleGroups.find((m) => m.slug === slug)?.nameDe ?? slug;
 
+  // Animierte Bewegungs-Demo (gemeinfreier Datensatz), sonst Muskelkarte.
+  const demo = getExerciseDemo(exercise.nameEn);
+
   return (
     <div className="space-y-5">
       <Link
@@ -94,6 +99,9 @@ export default async function ExerciseDetail({
           <Badge className="bg-success/15 text-success">Eigene</Badge>
         )}
       </div>
+
+      {/* Animierte Bewegungs-Demo (gemeinfrei), falls verfügbar */}
+      {demo && <ExerciseAnimation frames={demo.frames} />}
 
       {/* Muskelkarte: hebt genau die trainierten Muskeln hervor (aus den
           Übungsdaten abgeleitet – immer korrekt). */}
