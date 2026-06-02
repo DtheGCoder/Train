@@ -68,7 +68,10 @@ export function CoachCard({
                 <p className="truncate text-sm">
                   <span className="text-muted">Nächster Satz: </span>
                   <span className="font-bold tabular-nums">
-                    {rec.weight} kg × {rec.reps}
+                    {rec.weight} kg ×{" "}
+                    {rec.repLow === rec.repHigh
+                      ? rec.reps
+                      : `${rec.repLow}–${rec.repHigh}`}
                   </span>
                   <span className="ml-1.5 text-xs text-muted">
                     ~{rec.intensityPct}% · {rec.rir} RIR

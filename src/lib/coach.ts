@@ -70,13 +70,6 @@ const STYLE_CONFIG: Record<
   aggressive: { repBias: 1, stepPct: 0.05, pushRpe: 9.5, rir: 1, label: "Aggressiv" },
 };
 
-// Anfänger steigern schneller (lineare Progression), Fortgeschrittene langsamer.
-const EXPERIENCE_FACTOR: Record<Experience, number> = {
-  beginner: 1.5,
-  intermediate: 1.0,
-  advanced: 0.6,
-};
-
 export const GOAL_LABELS: Record<Goal, string> = {
   strength: "Kraft",
   hypertrophy: "Muskelaufbau",
@@ -93,12 +86,38 @@ export const STYLE_LABELS: Record<CoachStyle, string> = {
   aggressive: "Aggressiv",
 };
 
-/* ---------------- 1RM-Mathematik (Epley, beide Richtungen) ---------------- */
+/* ---------------- 1RM-Mathematik (RPE-bewusst, gemittelt) ---------------- */
 
+// Reps in Reserve aus RPE: RPE 10 ⇒ 0 (Versagen), 9 ⇒ 1, 8 ⇒ 2 … Halbe Stufen
+// (z. B. 8,5 ⇒ 1,5) sind erlaubt. Ohne RPE-Angabe nehmen wir konservativ 0 an.
+export function rirFromRpe(rpe: number): number {
+  return Math.max(0, Math.min(6, 10 - rpe));
+}
+
+// Geschätztes 1RM aus einem Satz. Mittelt Epley und Brzycki (robuster als eine
+// einzelne Formel) und DECKELT die Wiederholungen bei 12: jenseits davon
+// überschätzen alle 1RM-Formeln stark – ein „20er-Satz" sagt wenig über das
+// echte Maximum. Bewusst RPE-frei (für Verlaufswerte ohne RPE); die
+// RPE-bewusste Variante ist e1rmRpe().
 export function e1rm(weight: number, reps: number): number {
   if (weight <= 0 || reps <= 0) return 0;
   if (reps === 1) return weight;
-  return weight * (1 + reps / 30);
+  const r = Math.min(reps, 12);
+  const epley = weight * (1 + r / 30);
+  const brzycki = weight * (36 / (37 - r));
+  return (epley + brzycki) / 2;
+}
+
+// 1RM-Schätzung INKL. RPE: ein nicht bis zum Versagen geführter Satz hat
+// Reserve-Wiederholungen – das echte Maximum liegt höher. Die Reserve wird auf
+// die Wiederholungen addiert (5×100 kg @ RPE 8 ⇒ wie ein 7RM).
+export function e1rmRpe(
+  weight: number,
+  reps: number,
+  rpe?: number | null,
+): number {
+  const rir = rpe != null ? rirFromRpe(rpe) : 0;
+  return e1rm(weight, reps + rir);
 }
 
 // Last, um genau `reps` Wiederholungen zu schaffen (Maximalanstrengung).
@@ -119,13 +138,22 @@ export function roundToIncrement(w: number, inc = 2.5): number {
   return Math.round(w / inc) * inc;
 }
 
+// Sinnvolle kleinste Laststeigerung je Gewichtsbereich: kleine Lasten /
+// Isolation in feineren Schritten, schwere Grundübungen gröber. So bekommt der
+// Coach realistische, im Studio umsetzbare Sprünge (Hantelscheiben).
+export function loadIncrement(weight: number): number {
+  if (weight < 40) return 1.25;
+  if (weight < 100) return 2.5;
+  return 5;
+}
+
 /* ---------------- e1RM aus Historie ---------------- */
 
-// Bestes geschätztes 1RM über eine Menge an Sätzen.
+// Bestes geschätztes 1RM über eine Menge an Sätzen – RPE-bewusst, wenn vorhanden.
 export function bestE1RM(sets: SetLike[]): number {
   let best = 0;
   for (const s of sets) {
-    const v = e1rm(s.weight, s.reps);
+    const v = e1rmRpe(s.weight, s.reps, s.rpe ?? undefined);
     if (v > best) best = v;
   }
   return best;
@@ -139,17 +167,32 @@ export type SetRecommendation = {
   rir: number;
   intensityPct: number; // % vom 1RM
   hasBaseline: boolean;
+  repLow: number; // untere Grenze der Ziel-Wdh-Spanne (Doppelprogression)
+  repHigh: number; // obere Grenze – ab hier nächste Einheit Last erhöhen
 };
 
-// Zielwiederholungen abhängig von Ziel + Stil + bevorzugtem Wdh.-Stil.
-export function targetReps(profile: CoachProfile): number {
+// Ziel-Wiederholungsspanne abhängig von Ziel + persönlicher Vorliebe.
+// Grundlage der Doppelprogression: erst Wdh in der Spanne aufbauen, dann Last.
+export function repRange(profile: CoachProfile): { low: number; high: number } {
   const g = GOAL_CONFIG[profile.goal];
-  const mid = (g.repLow + g.repHigh) / 2;
-  let bias = STYLE_CONFIG[profile.coachStyle].repBias;
-  // Persönliche Vorliebe verschiebt das Ziel innerhalb des Bereichs.
-  if (profile.preferredRepStyle === "low") bias -= 2;
-  if (profile.preferredRepStyle === "high") bias += 2;
-  return Math.round(Math.min(g.repHigh, Math.max(g.repLow, mid + bias)));
+  let low = g.repLow;
+  let high = g.repHigh;
+  if (profile.preferredRepStyle === "low") {
+    low = Math.max(1, low - 2);
+    high = Math.max(low + 2, high - 2);
+  } else if (profile.preferredRepStyle === "high") {
+    low += 2;
+    high += 2;
+  }
+  return { low, high };
+}
+
+// Ein einzelner Ziel-Wert innerhalb der Spanne (für Plan-Vorgaben/Defaults).
+export function targetReps(profile: CoachProfile): number {
+  const { low, high } = repRange(profile);
+  const mid = (low + high) / 2;
+  const bias = STYLE_CONFIG[profile.coachStyle].repBias;
+  return Math.round(Math.min(high, Math.max(low, mid + bias)));
 }
 
 /* ---------------- Alters-/Erfahrungs-Modifikatoren ---------------- */
@@ -165,12 +208,15 @@ export function ageStepModifier(profile: CoachProfile): number {
   return 1;
 }
 
-// Effektive Schrittweite (% Laststeigerung) inkl. Erfahrung & Alter.
-function effectiveStep(profile: CoachProfile): number {
-  const style = STYLE_CONFIG[profile.coachStyle];
-  return (
-    style.stepPct * EXPERIENCE_FACTOR[profile.experience] * ageStepModifier(profile)
-  );
+// Realistische Last-Steigerung bei der Doppelprogression: Anfänger (lineare
+// Progression, sofern nicht hochbetagt) machen den doppelten Mindestschritt,
+// alle anderen den kleinstmöglichen – so wächst die Last in Studio-tauglichen
+// Sprüngen, ohne zu überfordern.
+function progressionJump(profile: CoachProfile, weight: number): number {
+  const inc = loadIncrement(weight);
+  const a = age(profile);
+  const linear = profile.experience === "beginner" && (a === null || a < 55);
+  return linear ? inc * 2 : inc;
 }
 
 // Empfehlung für den nächsten Arbeitssatz auf Basis des aktuellen e1RM.
@@ -178,17 +224,27 @@ export function recommendSet(
   oneRm: number,
   profile: CoachProfile,
 ): SetRecommendation {
+  const { low, high } = repRange(profile);
   const reps = targetReps(profile);
   const rir = STYLE_CONFIG[profile.coachStyle].rir;
   if (oneRm <= 0) {
-    return { weight: 0, reps, rir, intensityPct: 0, hasBaseline: false };
+    return {
+      weight: 0,
+      reps,
+      rir,
+      intensityPct: 0,
+      hasBaseline: false,
+      repLow: low,
+      repHigh: high,
+    };
   }
-  // Last, die `reps + rir` Maximal-Wiederholungen erlaubt → bei `reps` bleibt
-  // die geplante Reserve übrig.
-  const raw = weightForReps(oneRm, reps + rir);
-  const weight = roundToIncrement(raw);
+  // Last so wählen, dass am unteren Ende der Spanne die geplante Reserve übrig
+  // bleibt – dann ist Luft, die Wdh bis ans obere Ende aufzubauen, bevor die
+  // Last steigt (Doppelprogression).
+  const raw = weightForReps(oneRm, low + rir);
+  const weight = roundToIncrement(raw, loadIncrement(raw));
   const intensityPct = Math.round((weight / oneRm) * 100);
-  return { weight, reps, rir, intensityPct, hasBaseline: true };
+  return { weight, reps, rir, intensityPct, hasBaseline: true, repLow: low, repHigh: high };
 }
 
 /* ---------------- Kontext: Verlauf & Session-Zustand ---------------- */
@@ -222,7 +278,9 @@ export type HistoryInsight = {
   prevBestE1RM: number;
   sessionsSinceProgress: number; // Einheiten seit letztem Bestwert
   changePct: number; // Veränderung letzte vs. vorletzte Einheit
+  slopePctPerSession: number; // geglätteter Trend (lin. Regression) je Einheit, %
   sessionCount: number;
+  needsDeload: boolean; // hartnäckiges Plateau / Rückgang → Entlastung sinnvoll
 };
 
 // Wertet den Verlauf einer Übung aus: steigt, stagniert, fällt oder Plateau?
@@ -237,7 +295,9 @@ export function analyzeExerciseHistory(
       prevBestE1RM: 0,
       sessionsSinceProgress: 0,
       changePct: 0,
+      slopePctPerSession: 0,
       sessionCount: 0,
+      needsDeload: false,
     };
   }
   const last = s[s.length - 1];
@@ -256,12 +316,38 @@ export function analyzeExerciseHistory(
       ? ((last.bestE1RM - prev.bestE1RM) / prev.bestE1RM) * 100
       : 0;
 
+  // Geglätteter Trend statt nur „letzte vs. vorletzte": lineare Regression der
+  // e1RM über die letzten bis zu 6 Einheiten, normiert auf % je Einheit. Das
+  // ist robuster gegen einzelne Tagesform-Ausreißer.
+  const window = s.slice(-6);
+  const slopePctPerSession = (() => {
+    const n = window.length;
+    if (n < 2) return 0;
+    const meanX = (n - 1) / 2;
+    const meanY = window.reduce((a, x) => a + x.bestE1RM, 0) / n;
+    let num = 0;
+    let den = 0;
+    window.forEach((x, i) => {
+      num += (i - meanX) * (x.bestE1RM - meanY);
+      den += (i - meanX) ** 2;
+    });
+    const slope = den > 0 ? num / den : 0;
+    return meanY > 0 ? (slope / meanY) * 100 : 0;
+  })();
+
   let status: HistoryStatus;
   if (s.length === 1) status = "new";
-  else if (changePct <= -2.5) status = "regressing";
   else if (sessionsSinceProgress >= 3) status = "stalled";
-  else if (changePct >= 1.5) status = "rising";
+  else if (changePct <= -2.5 || slopePctPerSession <= -1.2) status = "regressing";
+  else if (slopePctPerSession >= 0.8 || changePct >= 1.5) status = "rising";
   else status = "flat";
+
+  // Entlastung (Deload) empfehlen, wenn das Plateau hartnäckig ist oder es
+  // trotz mehrerer Einheiten klar bergab geht – nicht schon beim ersten Knick.
+  const needsDeload =
+    s.length >= 4 &&
+    ((status === "stalled" && sessionsSinceProgress >= 3) ||
+      (status === "regressing" && slopePctPerSession <= -2));
 
   return {
     status,
@@ -269,7 +355,9 @@ export function analyzeExerciseHistory(
     prevBestE1RM: prev?.bestE1RM ?? 0,
     sessionsSinceProgress,
     changePct,
+    slopePctPerSession,
     sessionCount: s.length,
+    needsDeload,
   };
 }
 
@@ -297,34 +385,39 @@ export function recommendNextSet(
   const base = recommendSet(oneRm, profile);
   if (!base.hasBaseline) return base;
   const { state, insight } = ctx;
-  const tgt = targetReps(profile);
-  const repLow = GOAL_CONFIG[profile.goal].repLow;
+  const intensity = (w: number) =>
+    oneRm > 0 ? Math.round((w / oneRm) * 100) : 0;
 
   // Erster Arbeitssatz: am Verlauf ausrichten.
   if (state.completed.length === 0) {
+    if (insight.needsDeload) {
+      // Hartnäckiges Plateau/Rückgang: bewusst entlasten (~10 % runter),
+      // technisch sauber – das bricht das Plateau besser als noch mehr Last.
+      const weight = roundToIncrement(base.weight * 0.9, loadIncrement(base.weight));
+      return { ...base, weight, intensityPct: intensity(weight) };
+    }
     if (insight.status === "regressing") {
       // Nach rückläufigen Einheiten konservativ einsteigen (Technik vor Last).
-      const weight = roundToIncrement(base.weight * 0.975);
-      return {
-        ...base,
-        weight,
-        intensityPct: oneRm > 0 ? Math.round((weight / oneRm) * 100) : 0,
-      };
+      const weight = roundToIncrement(base.weight * 0.975, loadIncrement(base.weight));
+      return { ...base, weight, intensityPct: intensity(weight) };
     }
     return base;
   }
 
   // Folgesätze: Gewicht des letzten Arbeitssatzes halten, Wdh-Ziel wegen
-  // Ermüdung leicht senken (nicht stur weiter steigern).
+  // Ermüdung leicht senken (nicht stur weiter steigern). Untergrenze ist das
+  // untere Ende der Spanne – darunter lieber die Last reduzieren.
   const lastSet = state.completed[state.completed.length - 1];
   const weight = lastSet.weight > 0 ? lastSet.weight : base.weight;
-  const reps = Math.max(repLow, tgt - fatigueReps(state.completed.length));
+  const reps = Math.max(base.repLow, base.repHigh - fatigueReps(state.completed.length));
   return {
     weight,
     reps,
     rir: base.rir,
-    intensityPct: oneRm > 0 ? Math.round((weight / oneRm) * 100) : 0,
+    intensityPct: intensity(weight),
     hasBaseline: true,
+    repLow: base.repLow,
+    repHigh: base.repHigh,
   };
 }
 
@@ -352,52 +445,62 @@ export function coachAfterSet(
 ): Adjustment {
   const { state, insight } = ctx;
   const style = STYLE_CONFIG[profile.coachStyle];
+  const { low, high } = repRange(profile);
   const tgt = targetReps(profile);
-  const achieved = e1rm(done.weight, done.reps);
+
+  // RPE-bewusste Auswertung: der Satz „zählt" für das e1RM mit Reserve.
+  const rpe = done.rpe ?? null;
+  const rir = rpe !== null ? rirFromRpe(rpe) : null;
+  const achieved = e1rmRpe(done.weight, done.reps, rpe);
   const newE1RM = Math.max(oneRm, achieved);
   const pr = achieved > oneRm + 0.01 && done.weight > 0;
-  const step = 1 + effectiveStep(profile);
 
-  const rpe = done.rpe ?? null;
-  const beatBy = done.reps - tgt;
+  const inc = loadIncrement(done.weight);
+  const intensity = oneRm > 0 ? Math.round((done.weight / oneRm) * 100) : 0;
+  const beatHigh = done.reps - high; // Wdh über/unter dem oberen Spannenende
   const hardRpe = rpe !== null && rpe >= 9.5;
   const toughRpe = rpe !== null && rpe >= style.pushRpe;
-  const easyRpe = rpe !== null && rpe <= style.pushRpe - 2;
+  // „Klare Reserve": entweder gemessen (RIR ≥ 2) oder, ohne RPE, deutlich über
+  // dem oberen Spannenende.
+  const clearReserve = rir !== null ? rir >= 2 : beatHigh >= 2;
 
-  const setNo = state.completed.length + 1; // dieser Arbeitssatz
+  const setNo = state.completed.length + 1;
   const remaining = Math.max(0, state.plannedSets - setNo);
   const isFirst = setNo === 1;
-  const hold = done.weight; // gleiches Gewicht
+  const hold = done.weight;
+  const rpeTxt = rpe !== null ? ` (RPE ${rpe}, ~${rir} RIR)` : "";
 
   // Verlaufs-Zusatz nur beim 1. Satz (sonst wird's repetitiv).
   let historyNote = "";
   if (isFirst) {
-    if (insight.status === "rising")
-      historyNote = ` Dein Trend zeigt nach oben (+${Math.round(insight.changePct)}% zuletzt) — bestätige das.`;
+    if (insight.needsDeload)
+      historyNote = ` Seit ${insight.sessionsSinceProgress} Einheiten klemmt es — plan die nächste Woche als Deload (Last ~10 % runter, frisch zurückkommen).`;
+    else if (insight.status === "rising")
+      historyNote = ` Trend zeigt nach oben (${insight.slopePctPerSession >= 0 ? "+" : ""}${insight.slopePctPerSession.toFixed(1)} %/Einheit) — bestätige das.`;
     else if (insight.status === "regressing")
-      historyNote = ` Die letzten Einheiten gingen leicht runter — heute nichts erzwingen, sauber arbeiten.`;
+      historyNote = ` Zuletzt leicht rückläufig — heute nichts erzwingen, technisch sauber.`;
     else if (insight.status === "stalled")
-      historyNote = ` Seit ${insight.sessionsSinceProgress} Einheiten kein neuer Bestwert — Zeit, das Plateau gezielt anzugreifen.`;
+      historyNote = ` Seit ${insight.sessionsSinceProgress} Einheiten kein Bestwert — gezielt am Plateau arbeiten.`;
   }
 
   // 1) Neuer geschätzter Bestwert → feiern, danach Ermüdung respektieren.
   if (pr) {
     return {
       nextWeight: hold,
-      nextReps: tgt,
+      nextReps: Math.max(low, high - fatigueReps(setNo)),
       newE1RM,
       pr: true,
       tone: "push",
       message:
-        `Neuer geschätzter Bestwert — ${done.weight} kg × ${done.reps}! ` +
+        `Neuer geschätzter Bestwert — ${done.weight} kg × ${done.reps}${rpeTxt}! ` +
         (remaining > 0
-          ? `Folgesätze bei ${hold} kg halten, die Marke ist gesetzt.`
+          ? `Folgesätze ${hold} kg halten, die Marke steht.`
           : `Stark beendet.`) +
         historyNote,
     };
   }
 
-  // 2) Sehr schwer (RPE ≥ 9,5) → halten/zurücknehmen, niemals nachlegen.
+  // 2) Sehr schwer (RPE ≥ 9,5 / 0 RIR) → halten/zurücknehmen, nie nachlegen.
   if (hardRpe) {
     if (remaining === 0) {
       return {
@@ -409,69 +512,67 @@ export function coachAfterSet(
         message: pick(
           [
             `RPE ${rpe} zum Abschluss — alles gegeben, genau richtig.`,
-            `Das war Maximaleinsatz (RPE ${rpe}). Sauberer Schlusspunkt.`,
+            `Maximaleinsatz (RPE ${rpe}). Sauberer Schlusspunkt.`,
           ],
           setNo,
         ),
       };
     }
-    const lighter = roundToIncrement(done.weight * (1 - style.stepPct));
+    const lighter = roundToIncrement(done.weight * (1 - style.stepPct), inc);
     return {
-      nextWeight: lighter > 0 ? lighter : hold,
+      nextWeight: lighter > 0 && lighter < done.weight ? lighter : hold,
       nextReps: tgt,
       newE1RM,
       pr,
       tone: "hold",
       message:
-        `RPE ${rpe} – fast am Anschlag. Für die ${remaining} Restsätze ${hold} kg halten` +
+        `RPE ${rpe} – am Anschlag. Für die ${remaining} Restsätze ${hold} kg halten` +
         (lighter < done.weight ? ` oder auf ${lighter} kg runter` : "") +
-        `, Form geht vor. Nicht erzwingen.`,
+        `, Technik geht vor. Nicht erzwingen.`,
     };
   }
 
-  // 3) Frischer 1. Satz mit klarer Reserve → EINMALIG mehr Last anbieten.
-  //    (Nur hier wird „mehr" vorgeschlagen – nicht bei jedem Folgesatz.)
-  if (isFirst && (beatBy >= 3 || easyRpe) && done.weight > 0) {
-    const heavier = roundToIncrement(done.weight * step);
-    if (insight.status === "stalled") {
+  // 3) Doppelprogression: oberes Spannenende mit Reserve erreicht.
+  //    Beim FRISCHEN 1. Satz lohnt der Sprung sofort, sonst erst nächste
+  //    Einheit (innerhalb der Einheit Ermüdung respektieren).
+  if (beatHigh >= 0 && clearReserve && done.weight > 0) {
+    const heavier = roundToIncrement(
+      done.weight + progressionJump(profile, done.weight),
+      inc,
+    );
+    if (isFirst) {
       return {
         nextWeight: heavier,
-        nextReps: Math.max(GOAL_CONFIG[profile.goal].repLow, tgt - 1),
+        nextReps: low, // bei höherer Last unten in der Spanne neu ansetzen
         newE1RM,
         pr,
-        tone: "limit",
+        tone: insight.status === "stalled" ? "limit" : "push",
         message:
-          `Locker mit Reserve — und das Plateau will gebrochen werden. ` +
-          `Nächster Satz ${heavier} kg, geh kontrolliert ans Limit.` +
+          `${done.reps} Wdh am oberen Ende${rpeTxt} mit Reserve — Zeit, die Last zu erhöhen. ` +
+          `Nächster Satz ${heavier} kg, ziel auf ${low}+ Wdh.` +
           historyNote,
       };
     }
     return {
-      nextWeight: heavier,
-      nextReps: tgt,
+      nextWeight: hold,
+      nextReps: Math.max(low, high - fatigueReps(setNo)),
       newE1RM,
       pr,
       tone: "push",
       message:
-        pick(
-          [
-            `Satz 1 saß locker (${done.reps} Wdh). Leg auf ${heavier} kg nach.`,
-            `Da war klar Reserve. Trau dich an ${heavier} kg für die nächsten Sätze.`,
-          ],
-          setNo,
-        ) + historyNote,
+        `Oberes Spannenende geknackt (${done.reps} Wdh${rpeTxt}). Heute ${hold} kg halten, ` +
+        `nächste Einheit auf ${heavier} kg steigern.` +
+        (remaining > 0 ? ` Noch ${remaining} ${remaining === 1 ? "Satz" : "Sätze"}.` : ""),
     };
   }
 
-  // 4) Im/über Ziel mit Reserve, aber kein frischer 1. Satz → Gewicht HALTEN.
-  //    Ermüdung über die Sätze ist normal und gewollt – nicht weiter hochjagen.
-  if (beatBy >= 0 && !toughRpe && done.weight > 0) {
+  // 4) In der Spanne mit Reserve, aber kein Sprung fällig → Gewicht HALTEN und
+  //    Wdh ausbauen (Doppelprogression: erst die Spanne füllen, dann Last).
+  if (done.reps >= low && !toughRpe && done.weight > 0) {
+    const toGo = Math.max(0, high - done.reps);
     return {
       nextWeight: hold,
-      nextReps: Math.max(
-        GOAL_CONFIG[profile.goal].repLow,
-        tgt - fatigueReps(setNo),
-      ),
+      nextReps: Math.max(low, high - fatigueReps(setNo)),
       newE1RM,
       pr,
       tone: "hold",
@@ -479,18 +580,20 @@ export function coachAfterSet(
         remaining > 0
           ? pick(
               [
-                `Sauber, ${done.reps} Wdh. Gleiches Gewicht halten — noch ${remaining} ${remaining === 1 ? "Satz" : "Sätze"}.`,
-                `Sitzt. ${hold} kg beibehalten, Form sauber halten. Noch ${remaining} zu gehen.`,
-                `Gut kontrolliert. Bei ${hold} kg bleiben, Ermüdung ist eingeplant.`,
+                `Sauber, ${done.reps} Wdh${rpeTxt}. ${hold} kg halten` +
+                  (toGo > 0 ? `, bau Richtung ${high} Wdh aus.` : `.`) +
+                  ` Noch ${remaining} ${remaining === 1 ? "Satz" : "Sätze"}.`,
+                `Sitzt (${intensity}% vom Max). ${hold} kg beibehalten, Form sauber. Noch ${remaining} zu gehen.`,
+                `Gut kontrolliert. ${hold} kg, Ermüdung ist eingeplant${toGo > 0 ? ` – Ziel bleibt ${high} Wdh` : ""}.`,
               ],
               setNo,
             ) + historyNote
-          : `Letzter Satz sauber im Ziel — gut gemacht.` + historyNote,
+          : `Letzter Satz sauber in der Spanne — gut gemacht.` + historyNote,
     };
   }
 
-  // 5) Im Ziel, aber schon fordernd (RPE am Push-Level) → halten.
-  if (beatBy >= 0 && done.weight > 0) {
+  // 5) In der Spanne, aber schon fordernd (RPE am Push-Level) → halten.
+  if (done.reps >= low && done.weight > 0) {
     return {
       nextWeight: hold,
       nextReps: tgt,
@@ -499,28 +602,28 @@ export function coachAfterSet(
       tone: "hold",
       message:
         remaining > 0
-          ? `Im Ziel und fordernd (RPE ${rpe}). ${hold} kg halten — genau die richtige Dosis.`
+          ? `In der Spanne und fordernd${rpeTxt}. ${hold} kg halten — genau die richtige Dosis.`
           : `Im Ziel abgeschlossen, ordentlich gefordert.`,
     };
   }
 
-  // 6) Eine Wdh unter Ziel → späte Sätze: normal (Ermüdung), frühe: dranbleiben.
-  if (beatBy === -1 && done.weight > 0) {
+  // 6) Knapp unter der Spanne (1 Wdh) → späte Sätze normal, frühe dranbleiben.
+  if (done.reps === low - 1 && done.weight > 0) {
     return {
       nextWeight: hold,
-      nextReps: tgt,
+      nextReps: low,
       newE1RM,
       pr,
       tone: "hold",
       message:
         setNo >= 3
-          ? `Eine Wdh unter Ziel — nach ${setNo} Sätzen völlig normal. ${hold} kg halten.`
-          : `Knapp dran, eine Wdh fehlt. ${hold} kg halten und die ${tgt} holen.`,
+          ? `Eine Wdh unter der Spanne — nach ${setNo} Sätzen normal. ${hold} kg halten.`
+          : `Knapp dran, eine Wdh fehlt zur Spanne. ${hold} kg halten und die ${low} holen.`,
     };
   }
 
-  // 7) Deutlich unter Ziel / sehr zäh → Last reduzieren.
-  const lighter = roundToIncrement(done.weight * (1 - style.stepPct));
+  // 7) Klar unter der Spanne / sehr zäh → Last reduzieren.
+  const lighter = roundToIncrement(done.weight * (1 - style.stepPct), inc);
   return {
     nextWeight: lighter > 0 ? lighter : hold,
     nextReps: tgt,
@@ -529,9 +632,9 @@ export function coachAfterSet(
     tone: "back",
     message:
       (setNo >= 3
-        ? `Die Kraft lässt nach — normal so spät. `
-        : `Heute zäh bei dem Gewicht. `) +
-      `Nächster Satz ${lighter > 0 ? lighter : hold} kg, sauber für ${tgt} Wdh.`,
+        ? `Kraft lässt nach — so spät normal. `
+        : `Heute zäh bei dem Gewicht${rpeTxt}. `) +
+      `Nächster Satz ${lighter > 0 ? lighter : hold} kg, sauber für ${low}–${high} Wdh.`,
   };
 }
 
@@ -559,14 +662,15 @@ export function liveReaction(
   const predReps = repsForWeight(oneRm, enteredWeight);
   const isFollowUp = (ctx?.state.completed.length ?? 0) > 0;
 
+  const pct = Math.round(ratio * 100);
+
   // Nahe am oder über dem geschätzten Maximum.
   if (ratio >= 0.97) {
     return {
       tone: "caution",
       message:
-        `${enteredWeight} kg liegt an deinem geschätzten Maximum (${Math.round(
-          oneRm,
-        )} kg). Nur sauber und mit Sicherung — aber genau hier verschiebst du deine Grenze.`,
+        `${enteredWeight} kg ≈ dein geschätztes Maximum (${Math.round(oneRm)} kg, ${pct}%). ` +
+        `Nur technisch sauber und mit Sicherung — genau hier verschiebst du die Grenze.`,
     };
   }
   // Folgesatz: gehaltenes/leicht reduziertes Gewicht ist gewollt → nicht nörgeln.
@@ -576,7 +680,7 @@ export function liveReaction(
         tone: "caution",
         message:
           `${enteredWeight} kg ist für einen Folgesatz ambitioniert — die Ermüdung läuft mit. ` +
-          `Wenn die Form hält, gern; sonst ${rec.weight} kg.`,
+          `Hält die Form, gern; sonst ${rec.weight} kg.`,
       };
     }
     return null;
@@ -586,15 +690,17 @@ export function liveReaction(
     return {
       tone: "bold",
       message:
-        `Mutig! Bei ${enteredWeight} kg trau ich dir ~${predReps} Wdh zu. ` +
-        `Zeig, was geht — ich zähl mit.`,
+        `Mutig! Bei ${enteredWeight} kg (${pct}%) trau ich dir ~${predReps} Wdh zu. ` +
+        `Bleib bei sauberer Technik — ich zähl mit.`,
     };
   }
-  // 1. Satz, deutlich leichter als empfohlen → mehr fordern.
+  // 1. Satz, deutlich leichter als empfohlen → mehr fordern (Doppelprogression).
   if (enteredWeight < rec.weight * 0.92) {
     return {
       tone: "info",
-      message: `Da geht mehr. Für echten Reiz: ${rec.weight} kg × ${rec.reps}.`,
+      message:
+        `Da geht mehr. Für echten Reiz: ${rec.weight} kg × ${rec.repLow}–${rec.repHigh} ` +
+        `(${rec.rir} Wdh Reserve).`,
     };
   }
   return null;
@@ -609,29 +715,40 @@ export function age(profile: CoachProfile): number | null {
 
 export type WarmupSet = { weight: number; reps: number; pct: number };
 
-// Aufwärmsätze als Rampe zum Arbeitsgewicht. Ältere/Schwerere Lasten →
-// mehr Aufwärmsätze. Bei kleinen Lasten (Körpergewicht-nah) leer.
+// Aufwärm-Rampe zum Arbeitsgewicht. Je schwerer das Arbeitsgewicht und je
+// älter/kraftorientierter, desto mehr Stufen. Wiederholungen nehmen mit
+// steigender Last ab (mehr Wdh leicht → wenige schwer), die letzte Aufwärmstufe
+// ist bewusst nah am Arbeitsgewicht, aber mit Reserve. Kleine Lasten brauchen
+// keine eigene Rampe.
 export function warmupPlan(
   workWeight: number,
   profile: CoachProfile,
 ): WarmupSet[] {
   if (workWeight < 20) return []; // zu leicht für separates Aufwärmen
   const a = age(profile);
-  const heavy = profile.goal === "strength";
+  const heavy = profile.goal === "strength" || workWeight >= 100;
+  const older = a !== null && a >= 45;
   // Prozentschritte vom Arbeitsgewicht.
-  let steps = heavy ? [0.4, 0.6, 0.8] : [0.5, 0.75];
-  if ((a !== null && a >= 45) || heavy) steps = [0.4, 0.55, 0.7, 0.85];
+  let steps: number[];
+  if (heavy && older) steps = [0.35, 0.5, 0.65, 0.8, 0.9];
+  else if (heavy || older) steps = [0.4, 0.6, 0.75, 0.88];
+  else steps = [0.5, 0.75];
   return steps.map((pct) => ({
     pct: Math.round(pct * 100),
-    weight: roundToIncrement(workWeight * pct),
-    reps: pct < 0.55 ? 8 : pct < 0.75 ? 5 : 3,
+    weight: roundToIncrement(workWeight * pct, loadIncrement(workWeight * pct)),
+    reps: pct <= 0.4 ? 10 : pct < 0.6 ? 6 : pct < 0.8 ? 4 : 2,
   }));
 }
 
 /* ---------------- Pausen-Empfehlung ---------------- */
 
-// Empfohlene Satzpause in Sekunden, abhängig von Ziel & Stil.
-export function recommendedRest(profile: CoachProfile): number {
+// Empfohlene Satzpause in Sekunden, abhängig von Ziel, Stil – und, wenn
+// bekannt, von der tatsächlichen Anstrengung (RPE) und der Übungsart:
+// schwere/harte Grundübungen brauchen länger, leichte Isolation weniger.
+export function recommendedRest(
+  profile: CoachProfile,
+  ctx?: { rpe?: number | null; compound?: boolean },
+): number {
   const base =
     profile.goal === "strength"
       ? 180
@@ -639,13 +756,23 @@ export function recommendedRest(profile: CoachProfile): number {
         ? 105
         : 60; // endurance
   // Aggressiver Stil drückt etwas kürzer (Dichte), vorsichtig etwas länger.
-  const adj =
+  let adj =
     profile.coachStyle === "aggressive"
       ? -15
       : profile.coachStyle === "cautious"
         ? 20
         : 0;
-  return Math.max(45, base + adj);
+  // Anstrengung: harte Sätze (nahe Versagen) brauchen mehr Erholung.
+  if (ctx?.rpe != null) {
+    if (ctx.rpe >= 9.5) adj += 45;
+    else if (ctx.rpe >= 8.5) adj += 25;
+    else if (ctx.rpe <= 6) adj -= 20;
+  }
+  // Übungsart: mehrgelenkig zehrt mehr als Isolation.
+  if (ctx?.compound === true) adj += 20;
+  else if (ctx?.compound === false) adj -= 15;
+
+  return Math.max(45, Math.min(300, base + adj));
 }
 
 /* ---------------- Session-/Bereitschafts-Hinweise ---------------- */
@@ -706,6 +833,15 @@ export function sessionAdvice(profile: CoachProfile): string[] {
   if (profile.availableEquipment.trim()) {
     tips.push("Begrenztes Equipment: nutze Tempo, Pausen und Wdh, um den Reiz trotzdem hoch zu halten.");
   }
+
+  // Methodik: progressive Überlastung & RPE-Logging machen die Steuerung erst
+  // möglich – das gilt unabhängig vom Profil.
+  tips.push(
+    "Doppelprogression: erst die Wiederholungen bis ans obere Spannenende ausbauen, dann die Last in kleinen Schritten erhöhen.",
+  );
+  tips.push(
+    "Trag den RPE ein (gefühlte Anstrengung) – damit schätze ich dein Maximum und die nächste Last viel genauer.",
+  );
 
   return tips;
 }
@@ -812,6 +948,13 @@ export function coachWorkoutSummary(
       e.status === "regressing"
         ? `${e.name} lag unter dem letzten Mal – kann Tagesform sein. Nächstes Mal genau hinsehen: Schlaf, Aufwärmen, Pausen.`
         : `${e.name} stagniert seit ein paar Einheiten. Zeit für einen kleinen Reizwechsel – Wdh, Tempo oder eine leichte Deload-Woche.`,
+    );
+  }
+
+  // 3b) Mehrere Lifts klemmen gleichzeitig → systemische Ermüdung, Deload.
+  if (notes.length < 3 && stalling.length >= 2) {
+    notes.push(
+      `${stalling.length} Übungen stagnieren parallel – das riecht nach Ermüdung. Gönn dir eine Deload-Woche (Last ~10 % runter) und komm stärker zurück.`,
     );
   }
 

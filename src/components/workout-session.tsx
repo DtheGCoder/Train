@@ -263,7 +263,7 @@ export function WorkoutSession({
         });
         // Pause nur, wenn es noch weitergeht.
         if (nextEx) {
-          setRestSeconds(recommendedRest(coach.profile));
+          setRestSeconds(recommendedRest(coach.profile, { rpe }));
           setRestKey((k) => k + 1);
         }
       } else {
@@ -277,8 +277,8 @@ export function WorkoutSession({
           { state: sessionStateOf(ex, s.id), insight: insightOf(ex) },
         );
         setReaction(ex.id, { tone: adj.tone, message: adj.message });
-        // Rest-Timer mit vom Coach empfohlener Pause (Ziel/Stil-abhängig).
-        setRestSeconds(recommendedRest(coach.profile));
+        // Rest-Timer: Pause skaliert mit Ziel/Stil UND der Anstrengung (RPE).
+        setRestSeconds(recommendedRest(coach.profile, { rpe }));
         setRestKey((k) => k + 1);
       }
     }
