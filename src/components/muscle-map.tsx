@@ -1,12 +1,11 @@
 import { cn } from "@/lib/utils";
 
-// Anatomische Muskelkarte (Vorder- & Rückansicht). Eine glatte, durchgehende
-// Körper-Silhouette; die Muskeln sind unsichtbar Teil des Körpers und LEUCHTEN
-// nur auf, wenn die Übung sie trainiert (Primär kräftig, Sekundär abgeschwächt).
-// Dadurch wirkt der Körper sauber wie eine echte Figur statt aus Einzelteilen.
-// Hervorhebung kommt direkt aus den Übungsdaten → inhaltlich immer korrekt.
-// Vorne durch Schlüsselbeine + Bauch-Segmentierung erkennbar, hinten durch
-// Wirbelsäulen- und Gesäßlinie. Symmetrisch aus einer rechten Hälfte gespiegelt.
+// Anatomische Muskelkarte im Linien-Stil (Vorder- & Rückansicht): feine
+// Muskel-Konturen wie in einer Anatomie-Illustration; die trainierten Muskeln
+// werden ausgefüllt (Primär kräftig, Sekundär abgeschwächt). Hervorhebung kommt
+// direkt aus den Übungsdaten → inhaltlich immer korrekt. Symmetrisch aus einer
+// rechten Hälfte gespiegelt. Vorne durch Brust/Bauch/Gesicht, hinten durch
+// Trapez-V, Wirbelsäule & Gesäßspalte eindeutig zu unterscheiden.
 
 const CX = 110;
 const MIRROR = `translate(${CX * 2} 0) scale(-1 1)`;
@@ -35,43 +34,62 @@ const REGIONS: Record<string, string[]> = {
   cardio: ["quads", "hamstrings", "calves", "abs"],
 };
 
-// Glatte Körper-Silhouette (rechte Hälfte) – wird gespiegelt.
+// Körper-Umriss (rechte Hälfte) – wird gespiegelt.
 const SIL =
   "M110 22 C124 22 133 32 133 47 C133 58 129 65 124 69 C126 73 128 76 132 79 " +
-  "C143 82 153 87 161 96 C170 104 174 115 173 130 C172 150 169 171 166 190 " +
-  "C164 208 161 225 159 240 C158 251 158 260 156 268 C154 274 147 274 146 266 " +
-  "C147 249 149 228 151 208 C152 186 153 162 150 142 C148 132 146 124 142 118 " +
-  "C140 130 137 148 135 166 C134 174 133 180 133 186 C141 194 149 200 150 212 " +
-  "C151 238 146 277 138 313 C135 333 131 353 128 375 C126 389 123 399 121 409 " +
-  "C121 418 132 422 139 424 C129 429 118 429 117 423 C118 398 120 360 120 320 " +
+  "C144 82 154 88 162 97 C171 105 175 116 174 131 C173 151 170 172 167 191 " +
+  "C165 209 162 226 160 241 C159 252 159 261 157 269 C155 275 148 275 147 267 " +
+  "C148 250 150 229 152 209 C153 187 154 163 151 143 C149 133 147 125 143 119 " +
+  "C141 131 138 149 136 167 C135 175 134 181 134 187 C142 195 150 201 151 213 " +
+  "C152 239 147 278 139 314 C136 334 132 354 129 376 C127 390 124 400 122 410 " +
+  "C122 419 133 423 140 425 C130 430 118 430 117 424 C118 399 120 360 120 320 " +
   "C121 290 120 250 118 228 L110 224 L110 22 Z";
 
+// Füllbare Muskel-Konturen (rechte Hälfte).
 const FRONT: { id: string; d: string }[] = [
-  { id: "chest", d: "M111 98 C126 99 142 104 150 118 C150 134 141 150 124 152 C117 152 113 140 111 128 Z" },
-  { id: "deltF", d: "M150 92 C162 98 170 110 171 131 C171 141 167 147 161 145 C155 137 151 116 149 100 Z" },
-  { id: "trapsF", d: "M112 74 C128 77 142 82 152 92 C140 94 124 94 113 92 Z" },
-  { id: "biceps", d: "M150 150 C160 152 166 166 165 188 C164 202 160 208 155 208 C151 196 150 170 150 152 Z" },
-  { id: "foreF", d: "M150 214 C159 216 162 228 160 244 C159 256 156 262 152 264 C149 252 148 230 149 216 Z" },
-  { id: "abs", d: "M110 136 L131 138 C132 164 131 192 129 204 L110 204 Z" },
-  { id: "obliques", d: "M132 142 C139 150 141 162 139 182 C138 192 135 197 131 198 C132 178 132 158 132 142 Z" },
-  { id: "quads", d: "M111 214 C128 210 145 214 147 232 C147 262 137 296 124 314 C118 300 113 268 112 240 Z" },
+  { id: "chest", d: "M111 99 C127 100 143 105 151 119 C150 134 141 150 123 152 C117 152 113 141 112 130 Z" },
+  { id: "deltF", d: "M151 93 C164 98 173 111 173 132 C173 143 168 149 161 147 C156 139 152 118 150 100 Z" },
+  { id: "trapsF", d: "M111 76 C126 79 140 84 151 93 L150 96 C138 97 124 97 112 96 Z" },
+  { id: "biceps", d: "M151 150 C161 153 166 168 165 189 C164 201 160 207 156 206 C152 195 151 170 151 152 Z" },
+  { id: "foreF", d: "M150 211 C160 214 164 227 162 245 C161 257 157 264 153 265 C150 251 149 229 150 213 Z" },
+  { id: "abs", d: "M110 137 L132 139 C133 165 132 193 130 205 L110 205 Z" },
+  { id: "obliques", d: "M133 151 C141 159 143 171 140 189 C138 197 135 201 131 201 C132 185 132 167 133 151 Z" },
+  { id: "quads", d: "M111 213 C128 210 145 215 148 233 C148 259 140 293 127 313 C121 301 114 270 112 240 Z" },
 ];
 
 const BACK: { id: string; d: string }[] = [
-  { id: "trapsB", d: "M110 74 C130 78 148 86 160 98 C148 120 130 145 113 165 C113 134 111 100 110 76 Z" },
-  { id: "deltB", d: "M150 92 C162 98 170 110 171 131 C171 141 167 147 161 145 C155 137 151 116 149 100 Z" },
-  { id: "upperback", d: "M138 120 C150 124 158 136 156 152 C150 160 142 160 136 154 C137 140 137 128 138 120 Z" },
-  { id: "lats", d: "M136 152 C148 160 152 178 142 200 C132 214 118 214 116 212 L116 156 C124 154 130 153 136 152 Z" },
-  { id: "triceps", d: "M150 150 C160 152 166 166 165 188 C164 202 160 208 155 208 C151 196 150 170 150 152 Z" },
-  { id: "foreB", d: "M150 214 C159 216 162 228 160 244 C159 256 156 262 152 264 C149 252 148 230 149 216 Z" },
-  { id: "lowerback", d: "M110 206 L127 207 C128 226 127 242 125 250 L110 250 Z" },
-  { id: "glutes", d: "M112 212 C128 210 144 220 145 240 C145 256 134 266 117 266 C114 252 113 230 112 214 Z" },
-  { id: "hamstrings", d: "M114 270 C128 268 140 280 138 302 C136 332 126 354 118 362 C115 350 114 310 114 272 Z" },
-  { id: "calves", d: "M114 368 C126 370 132 384 130 402 C128 414 120 418 116 416 C115 404 114 386 114 370 Z" },
+  { id: "trapsB", d: "M110 74 C128 78 146 86 160 98 C151 117 133 141 114 161 L110 161 Z" },
+  { id: "deltB", d: "M151 93 C164 98 173 111 173 132 C173 143 168 149 161 147 C156 139 152 118 150 100 Z" },
+  { id: "upperback", d: "M139 119 C151 123 159 135 157 151 C151 159 143 159 138 153 Z" },
+  { id: "lats", d: "M138 151 C150 159 153 179 143 201 C134 214 120 214 117 211 L117 156 C125 154 132 153 138 151 Z" },
+  { id: "triceps", d: "M151 150 C161 153 166 168 165 189 C164 201 160 207 156 206 C152 195 151 170 151 152 Z" },
+  { id: "foreB", d: "M150 211 C160 214 164 227 162 245 C161 257 157 264 153 265 C150 251 149 229 150 213 Z" },
+  { id: "lowerback", d: "M110 200 L127 201 C128 223 127 241 125 251 L110 251 Z" },
+  { id: "glutes", d: "M112 210 C129 208 146 218 147 241 C147 258 135 268 117 268 C114 253 113 230 112 212 Z" },
+  { id: "hamstrings", d: "M114 270 C129 268 142 281 140 305 C138 335 128 357 120 365 C116 351 114 308 114 272 Z" },
+  { id: "calves", d: "M114 367 C128 370 134 385 132 405 C130 417 121 421 116 419 C115 405 114 387 114 369 Z" },
 ];
 
-const BODY = "#2c2c34"; // Körperfarbe (= nicht trainierte Muskeln, unsichtbar)
-const LINE = "#43434e"; // dezente anatomische Konturlinien
+// Reine Definitionslinien (Muskel-Trennungen, nie gefüllt).
+const LINES_FRONT =
+  "M126 70 L118 88 M122 71 L120 88 " + // Sternocleidomastoideus (Hals)
+  "M112 130 C120 135 127 138 132 138 " + // untere Brustlinie
+  "M134 154 l5 4 M133 161 l6 3 M133 168 l6 3 " + // Serratus
+  "M96 157 H124 M97 173 H123 M98 189 H122 M110 139 V205 " + // Bauch (Sixpack)
+  "M129 218 C133 250 130 285 124 310 " + // Rectus femoris / Vastus-Teilung
+  "M120 214 C112 240 113 280 121 305 " + // Sartorius
+  "M150 168 C156 175 158 182 158 190"; // Brachialis
+
+const LINES_BACK =
+  "M110 78 V205 " + // Wirbelsäule
+  "M114 161 L132 140 M114 161 C124 175 128 190 128 200 " + // unterer Trapez (V)
+  "M114 246 C124 250 130 250 134 246 " + // Gesäßfalte
+  "M110 214 V262 " + // Gesäßspalte
+  "M125 285 C129 315 124 345 119 362 " + // Hamstring-Teilung
+  "M114 382 C124 384 128 384 131 382 M120 405 C124 412 124 412 128 405"; // Gastrocnemius-Köpfe
+
+const STROKE = "var(--muted)";
+const HILITE = "var(--primary)";
 
 export function MuscleMap({
   primary,
@@ -85,23 +103,41 @@ export function MuscleMap({
   const primaryRegions = new Set(REGIONS[primary] ?? []);
   const secondaryRegions = new Set(secondary.flatMap((s) => REGIONS[s] ?? []));
 
-  const fillFor = (id: string): string => {
-    if (primaryRegions.has(id)) return "var(--primary)";
+  const styleFor = (id: string): { fill: string; fillOpacity: number; stroke: string } => {
+    if (primaryRegions.has(id))
+      return { fill: HILITE, fillOpacity: 0.6, stroke: HILITE };
     if (secondaryRegions.has(id))
-      return `color-mix(in srgb, var(--primary) 55%, ${BODY})`;
-    return BODY; // wie der Körper → unsichtbar, glatte Silhouette
+      return { fill: HILITE, fillOpacity: 0.28, stroke: HILITE };
+    return { fill: "none", fillOpacity: 0, stroke: STROKE };
   };
 
   const muscles = (shapes: { id: string; d: string }[]) =>
-    shapes.flatMap((s) => [
-      <path key={`${s.id}-a`} d={s.d} fill={fillFor(s.id)} />,
-      <path key={`${s.id}-b`} d={s.d} transform={MIRROR} fill={fillFor(s.id)} />,
-    ]);
+    shapes.flatMap((s) => {
+      const st = styleFor(s.id);
+      const common = {
+        fill: st.fill,
+        fillOpacity: st.fillOpacity,
+        stroke: st.stroke,
+        strokeWidth: 0.8,
+        strokeLinejoin: "round" as const,
+      };
+      return [
+        <path key={`${s.id}-a`} d={s.d} {...common} />,
+        <path key={`${s.id}-b`} d={s.d} transform={MIRROR} {...common} />,
+      ];
+    });
 
-  const silhouette = (
+  const lineGroup = (d: string) => (
     <>
-      <path d={SIL} fill={BODY} />
-      <path d={SIL} transform={MIRROR} fill={BODY} />
+      <path d={d} fill="none" stroke={STROKE} strokeWidth={0.7} opacity={0.85} strokeLinecap="round" />
+      <path d={d} transform={MIRROR} fill="none" stroke={STROKE} strokeWidth={0.7} opacity={0.85} strokeLinecap="round" />
+    </>
+  );
+
+  const outline = (
+    <>
+      <path d={SIL} fill="none" stroke={STROKE} strokeWidth={1} strokeLinejoin="round" />
+      <path d={SIL} transform={MIRROR} fill="none" stroke={STROKE} strokeWidth={1} strokeLinejoin="round" />
     </>
   );
 
@@ -114,28 +150,22 @@ export function MuscleMap({
     >
       {/* VORDERANSICHT */}
       <g>
-        {silhouette}
+        {outline}
         {muscles(FRONT)}
-        {/* Schlüsselbeine + Bauch-Segmentierung → eindeutig Vorderseite */}
-        <g stroke={LINE} strokeWidth={0.8} opacity={0.6} fill="none" strokeLinecap="round">
-          <line x1="110" y1="84" x2="96" y2="93" />
-          <line x1="110" y1="84" x2="124" y2="93" />
-          <line x1="96" y1="156" x2="124" y2="156" />
-          <line x1="97" y1="172" x2="123" y2="172" />
-          <line x1="98" y1="188" x2="122" y2="188" />
-          <line x1="110" y1="138" x2="110" y2="204" />
+        {lineGroup(LINES_FRONT)}
+        {/* neutrales Gesicht (Nase + Brauen) → Vorderseite */}
+        <g stroke={STROKE} strokeWidth={0.7} opacity={0.7} strokeLinecap="round">
+          <line x1="110" y1="45" x2="110" y2="53" />
+          <line x1="103" y1="44" x2="108" y2="44" />
+          <line x1="112" y1="44" x2="117" y2="44" />
         </g>
       </g>
 
       {/* RÜCKANSICHT */}
       <g transform="translate(220 0)">
-        {silhouette}
+        {outline}
         {muscles(BACK)}
-        {/* Wirbelsäule + Gesäßspalte → eindeutig Rückseite */}
-        <g stroke={LINE} strokeWidth={1} opacity={0.65} strokeLinecap="round">
-          <line x1="110" y1="78" x2="110" y2="205" />
-          <line x1="110" y1="214" x2="110" y2="262" />
-        </g>
+        {lineGroup(LINES_BACK)}
       </g>
 
       <text x="110" y="446" textAnchor="middle" fontSize="11" fontWeight="600" fill="var(--muted)">
