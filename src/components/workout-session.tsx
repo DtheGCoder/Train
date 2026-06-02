@@ -41,6 +41,7 @@ import {
   repsForWeight,
   recommendedRest,
   coachWorkoutSummary,
+  sessionExerciseAdvice,
   type WorkoutSummary,
 } from "@/lib/coach";
 import {
@@ -78,6 +79,26 @@ type Initial = {
 
 const setTypeCycle = ["normal", "warmup", "dropset", "failure"];
 
+// Spezifische Muskel-Anzeigenamen → 6 Hauptgruppen (für die Übungs-Empfehlung
+// am Ende der Einheit). Ganzkörper/Cardio zählen auf keine einzelne Gruppe.
+const MUSCLE_GROUP_DE: Record<string, string> = {
+  Brust: "Brust",
+  Rücken: "Rückenmuskulatur",
+  Latissimus: "Rückenmuskulatur",
+  Trapez: "Rückenmuskulatur",
+  Schultern: "Schultern",
+  Bizeps: "Arme",
+  Trizeps: "Arme",
+  Unterarme: "Arme",
+  Quadrizeps: "Beine",
+  Beinbeuger: "Beine",
+  Gesäß: "Beine",
+  Waden: "Beine",
+  Bauch: "Rumpf",
+  "Seitliche Bauchmuskeln": "Rumpf",
+  "Unterer Rücken": "Rumpf",
+};
+
 export function WorkoutSession({
   initial,
   previous,
@@ -104,11 +125,15 @@ export function WorkoutSession({
   const [, startTransition] = useTransition();
   const router = useRouter();
   const [isFinishing, setIsFinishing] = useState(false);
+  const [confirmFinish, setConfirmFinish] = useState(false);
   // Abschluss-Übersicht: Coach-Fazit (Snapshot beim Beenden). Gespeichert wird
   // erst, wenn der Nutzer selbst auf „Zum Verlauf" tippt – so bleibt die
   // Übersicht offen, statt durch das Speichern sofort weggeleitet zu werden.
   const [finishSummary, setFinishSummary] = useState<WorkoutSummary | null>(null);
   const [finishSaving, setFinishSaving] = useState(false);
+  // Trainingsdauer wird im Moment des Beendens eingefroren (läuft danach NICHT
+  // weiter, während die Übersicht offen ist).
+  const [finishedElapsed, setFinishedElapsed] = useState<number | null>(null);
   // Letzter getippter RPE-Wert je Satz (synchron, damit das Abhaken den
   // gerade eingegebenen Wert auswertet, bevor der State-Re-Render greift).
   const rpeRef = useRef<Record<string, number | null>>({});
@@ -119,12 +144,14 @@ export function WorkoutSession({
   const [animExIds, setAnimExIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
+    // Beim Beenden einfrieren: kein Interval mehr, der Wert bleibt stehen.
+    if (isFinishing) return;
     const start = new Date(initial.startedAt).getTime();
     const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
     tick();
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [initial.startedAt]);
+  }, [initial.startedAt, isFinishing]);
 
   const stats = useMemo(() => {
     let volume = 0;
@@ -364,8 +391,17 @@ export function WorkoutSession({
     });
   };
 
+  // Beenden-Button öffnet erst eine Sicherheitsabfrage (falls versehentlich).
+  const requestFinish = () => {
+    if (isFinishing) return;
+    setConfirmFinish(true);
+  };
+
   const handleFinish = () => {
     if (isFinishing) return;
+    setConfirmFinish(false);
+    // Dauer im Moment des Beendens einfrieren.
+    setFinishedElapsed(elapsed);
 
     // Coach-Fazit aus dem aktuellen Stand berechnen (Snapshot beim Beenden).
     const exSummaries = exercises
@@ -421,18 +457,76 @@ export function WorkoutSession({
     });
   };
 
+  // Sind alle geplanten Übungen erledigt? Dann gibt der Coach eine ehrliche
+  // Empfehlung: noch eine Übung dranhängen (welche?) oder aufhören.
+  const allExercisesDone =
+    exercises.length > 0 && exercises.every((e) => isExerciseDone(e));
+
+  const advice = useMemo(() => {
+    const perGroupSets: Record<string, number> = {};
+    const usedIds = new Set<string>();
+    for (const ex of exercises) {
+      usedIds.add(ex.exerciseId);
+      const group = MUSCLE_GROUP_DE[ex.muscleName];
+      if (!group) continue;
+      const sets = ex.sets.filter(
+        (s) => s.isCompleted && s.setType !== "warmup",
+      ).length;
+      if (sets > 0) perGroupSets[group] = (perGroupSets[group] ?? 0) + sets;
+    }
+    const availableByGroup: Record<string, string[]> = {};
+    for (const it of pickerItems) {
+      if (usedIds.has(it.id)) continue;
+      const group = MUSCLE_GROUP_DE[it.muscleName];
+      if (!group) continue;
+      (availableByGroup[group] ??= []).push(it.nameDe);
+    }
+    return sessionExerciseAdvice({
+      perGroupSets,
+      availableByGroup,
+      profile: coach.profile,
+    });
+  }, [exercises, pickerItems, coach.profile]);
+
+  const finishDuration = formatDuration(finishedElapsed ?? elapsed);
+
   return (
     <div className="space-y-4 pb-28">
       {/* Abschluss-Feier + Übersicht */}
       {isFinishing && (
         <FinishOverlay
-          durationLabel={formatDuration(elapsed)}
+          durationLabel={finishDuration}
           volume={stats.volume}
           sets={stats.completedSets}
           summary={finishSummary}
           saving={finishSaving}
           onContinue={handleGoToHistory}
         />
+      )}
+
+      {/* Sicherheitsabfrage vor dem Beenden */}
+      {confirmFinish && !isFinishing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 px-6 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-xl">
+            <h2 className="text-lg font-bold">Workout beenden?</h2>
+            <p className="mt-1.5 text-sm text-muted">
+              Willst du dieses Training wirklich beenden? Danach kannst du es
+              nicht mehr fortsetzen.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => setConfirmFinish(false)}
+              >
+                Abbrechen
+              </Button>
+              <Button className="flex-1" onClick={handleFinish}>
+                <Flag className="size-4" /> Beenden
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Kopf mit Live-Stats */}
@@ -448,7 +542,7 @@ export function WorkoutSession({
               <span>{stats.completedSets} Sätze</span>
             </div>
           </div>
-          <Button onClick={handleFinish} disabled={isFinishing} className="shrink-0">
+          <Button onClick={requestFinish} disabled={isFinishing} className="shrink-0">
             <Flag className="size-4" /> Beenden
           </Button>
         </div>
@@ -637,6 +731,45 @@ export function WorkoutSession({
           </Reveal>
         );
       })}
+
+      {/* Coach-Empfehlung, sobald alle geplanten Übungen erledigt sind:
+          ehrlich noch eine Übung dranhängen (welche?) oder aufhören. */}
+      {allExercisesDone && (
+        <div
+          className={cn(
+            "rounded-xl border px-4 py-3",
+            advice.verdict === "add"
+              ? "border-primary/30 bg-primary/5"
+              : "border-success/30 bg-success/5",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {advice.verdict === "add" ? (
+              <Dumbbell className="size-4 shrink-0 text-primary" />
+            ) : (
+              <Flag className="size-4 shrink-0 text-success" />
+            )}
+            <p
+              className={cn(
+                "text-sm font-semibold",
+                advice.verdict === "add" ? "text-primary" : "text-success",
+              )}
+            >
+              Coach: {advice.headline}
+            </p>
+          </div>
+          <p className="mt-1 text-xs leading-snug text-muted">{advice.detail}</p>
+          {advice.verdict === "add" && (
+            <button
+              type="button"
+              onClick={() => setShowPicker(true)}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+            >
+              <Plus className="size-3.5" /> Übung hinzufügen
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Aktionen */}
       <div className="flex flex-col gap-2">

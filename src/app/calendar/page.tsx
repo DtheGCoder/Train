@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState } from "@/components/ui";
 import { WorkoutCalendar } from "@/components/workout-calendar";
+import { DeleteWorkoutButton } from "@/components/delete-workout-button";
 import { formatDuration } from "@/lib/utils";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -66,13 +67,16 @@ export default async function CalendarPage() {
                 0,
               );
               return (
-                <li key={w.id}>
+                <li
+                  key={w.id}
+                  className="flex items-center gap-2 rounded-xl border border-border bg-surface pr-2 hover:bg-surface-2"
+                >
                   <Link
                     href={`/history/${w.id}`}
-                    className="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3 hover:bg-surface-2"
+                    className="flex min-w-0 flex-1 items-center justify-between gap-2 px-4 py-3"
                   >
-                    <div>
-                      <p className="font-medium">{w.name}</p>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{w.name}</p>
                       <p className="text-xs text-muted">
                         {format(w.startedAt, "EEEE, dd. MMM yyyy", {
                           locale: de,
@@ -85,8 +89,9 @@ export default async function CalendarPage() {
                         {dur ? <span>{formatDuration(dur)}</span> : null}
                       </div>
                     </div>
-                    <ChevronRight className="size-4 text-muted" />
+                    <ChevronRight className="size-4 shrink-0 text-muted" />
                   </Link>
+                  <DeleteWorkoutButton id={w.id} name={w.name} />
                 </li>
               );
             })}

@@ -386,6 +386,62 @@ export async function discardWorkout(workoutId: string) {
   redirect("/");
 }
 
+// Einzelnes (abgeschlossenes) Workout aus dem Verlauf löschen. Entfernt es per
+// Cascade samt Sätzen und rechnet die persönlichen Rekorde der betroffenen
+// Übungen neu, damit das Workout vollständig aus allen Statistiken (Volumen,
+// Rekorde, Bestenliste) verschwindet.
+export async function deleteWorkout(workoutId: string) {
+  const user = await requireUser();
+  const workout = await db.workout.findFirst({
+    where: { id: workoutId, userId: user.id },
+    include: { exercises: { select: { exerciseId: true } } },
+  });
+  if (!workout) return;
+
+  const exerciseIds = [...new Set(workout.exercises.map((e) => e.exerciseId))];
+  await db.workout.delete({ where: { id: workout.id } });
+
+  // Rekorde der betroffenen Übungen aus den VERBLEIBENDEN Daten neu aufbauen.
+  for (const exerciseId of exerciseIds) {
+    await recomputePRsForExercise(exerciseId, user.id);
+  }
+
+  revalidatePath("/calendar");
+  revalidatePath("/stats");
+  revalidatePath("/leaderboard");
+  revalidatePath("/");
+}
+
+// Baut die Rekorde einer Übung komplett neu (löschen + aus den verbleibenden
+// abgeschlossenen Sätzen neu berechnen). Wird nach dem Löschen aufgerufen.
+async function recomputePRsForExercise(exerciseId: string, userId: string) {
+  await db.personalRecord.deleteMany({ where: { exerciseId, userId } });
+  const sets = await db.workoutSet.findMany({
+    where: {
+      workoutExercise: {
+        exerciseId,
+        workout: { userId, finishedAt: { not: null } },
+      },
+      isCompleted: true,
+    },
+  });
+  if (sets.length === 0) return;
+
+  const maxWeight = Math.max(...sets.map((s) => s.weight));
+  const best1rm = Math.max(...sets.map((s) => epley1RM(s.weight, s.reps)));
+  const maxReps = Math.max(...sets.map((s) => s.reps));
+  const records: [string, number][] = [
+    ["maxWeight", maxWeight],
+    ["1rm", best1rm],
+    ["maxReps", maxReps],
+  ];
+  for (const [recordType, value] of records) {
+    await db.personalRecord.create({
+      data: { exerciseId, recordType, value, userId },
+    });
+  }
+}
+
 async function updatePRsForExercise(exerciseId: string, userId: string) {
   const sets = await db.workoutSet.findMany({
     where: {

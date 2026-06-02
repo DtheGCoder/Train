@@ -872,6 +872,81 @@ export function rpeLabel(rpe: number): string {
   return "Leicht – viel Reserve";
 }
 
+/* ---------------- Übungs-Empfehlung am Ende der Einheit ---------------- */
+
+// Evidenz-orientierte Richtwerte für harte Arbeitssätze JE Muskelgruppe PRO
+// Einheit: ~5–10 sind ein voller Reiz, <5 ist eine leichte Berührung, sehr
+// hohe Gesamtvolumina bringen v. a. Ermüdung. Bewusst als Richtwerte, nicht als
+// absolute Wahrheit – die Aussagen unten bleiben deshalb streng an den realen
+// Zahlen.
+const SESSION_GROUP_MIN = 5; // ab hier gilt eine Gruppe als solide versorgt
+const SESSION_TOTAL_CEILING = 25; // darüber dominiert Ermüdung
+
+export type SessionAdvice = {
+  verdict: "add" | "stop";
+  headline: string;
+  detail: string;
+  suggestions: string[]; // konkrete, heute noch nicht genutzte Übungsnamen
+};
+
+// Sagt am Ende der Einheit ehrlich: noch eine Übung dranhängen (welche?) oder
+// aufhören. Streng datengetrieben – jede Aussage deckt sich mit den Zahlen.
+export function sessionExerciseAdvice(input: {
+  perGroupSets: Record<string, number>; // harte Arbeitssätze je Gruppe, diese Einheit
+  availableByGroup: Record<string, string[]>; // verfügbare, heute ungenutzte Übungen
+  profile: CoachProfile;
+}): SessionAdvice {
+  const { perGroupSets, availableByGroup } = input;
+  const trained = Object.entries(perGroupSets).filter(([, n]) => n > 0);
+  const totalSets = trained.reduce((a, [, n]) => a + n, 0);
+
+  if (totalSets === 0) {
+    return {
+      verdict: "stop",
+      headline: "Noch kein abgeschlossener Satz",
+      detail: "Hak deine Sätze ab, dann sage ich dir, ob noch etwas fehlt.",
+      suggestions: [],
+    };
+  }
+
+  // Leicht belastete, aber bereits trainierte Gruppen, für die es noch eine
+  // verfügbare Übung gibt → echte Kandidaten zum Dranhängen.
+  const candidates = trained
+    .filter(([g, n]) => n < SESSION_GROUP_MIN && (availableByGroup[g]?.length ?? 0) > 0)
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, 2);
+
+  const overCeiling = totalSets >= SESSION_TOTAL_CEILING;
+
+  if (candidates.length > 0 && !overCeiling) {
+    const suggestions = candidates.map(([g]) => availableByGroup[g][0]);
+    const parts = candidates.map(
+      ([g, n]) =>
+        `${g} (erst ${n} ${n === 1 ? "harter Satz" : "harte Sätze"}) → z. B. „${availableByGroup[g][0]}"`,
+    );
+    return {
+      verdict: "add",
+      headline: "Da geht noch was",
+      detail:
+        `Für einen vollen Reiz sind ~${SESSION_GROUP_MIN}–10 harte Sätze pro Gruppe sinnvoll. ` +
+        `Häng noch dran: ${parts.join("; ")}.`,
+      suggestions,
+    };
+  }
+
+  // Sonst: aufhören – aber mit der ZUTREFFENDEN Begründung.
+  let detail: string;
+  if (overCeiling) {
+    detail = `Hohes Volumen heute (${totalSets} harte Sätze). Mehr bringt jetzt vor allem Ermüdung statt Reiz — sauber beenden und erholen.`;
+  } else if (trained.every(([, n]) => n >= SESSION_GROUP_MIN)) {
+    detail = `Alle heute trainierten Muskelgruppen haben genug harte Sätze (≥${SESSION_GROUP_MIN}) abbekommen. Ein weiterer Reiz würde v. a. ermüden — aufhören ist die richtige Wahl.`;
+  } else {
+    detail =
+      "Für die noch leichter belasteten Gruppen hast du aktuell keine passende weitere Übung im Katalog. Damit ist hier Schluss sinnvoll — oder leg dir später eine passende Übung an.";
+  }
+  return { verdict: "stop", headline: "Genug für heute", detail, suggestions: [] };
+}
+
 /* ---------------- Abschluss-Fazit (nach dem Workout) ---------------- */
 
 // Zusammenfassung einer abgeschlossenen Übung dieser Einheit.
