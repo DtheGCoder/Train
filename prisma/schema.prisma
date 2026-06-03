@@ -101,6 +101,10 @@ model Program {
   cursor      Int          @default(0) // Index des nächsten Tages
   cycles      Int          @default(0) // abgeschlossene Durchläufe
   active      Boolean      @default(true)
+  // Coach-Anpassungen: Protokoll automatischer Änderungen (JSON-Array) und
+  // Durchlauf, in dem zuletzt entlastet (Deload) wurde.
+  coachLogJson    String   @default("[]")
+  lastDeloadCycle Int      @default(0)
   startedAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   days        ProgramDay[]

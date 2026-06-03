@@ -15,6 +15,7 @@ import {
   CoachPlanSection,
   type ActiveProgram,
   type Recommendation,
+  type CoachLogEntry,
 } from "@/components/coach-plan-section";
 
 export const dynamic = "force-dynamic";
@@ -133,6 +134,13 @@ export default async function RoutinesPage() {
     const countMap = new Map(
       dayRoutines.map((r) => [r.id, r._count.exercises]),
     );
+    let coachLog: CoachLogEntry[] = [];
+    try {
+      const parsed = JSON.parse(activeRaw.coachLogJson || "[]");
+      if (Array.isArray(parsed)) coachLog = parsed as CoachLogEntry[];
+    } catch {
+      coachLog = [];
+    }
     activeProgram = {
       id: activeRaw.id,
       name: activeRaw.name,
@@ -144,6 +152,7 @@ export default async function RoutinesPage() {
       cycles: activeRaw.cycles,
       schedule: seed?.schedule ?? "",
       benefits: seed?.benefits ?? "",
+      coachLog,
       days: activeRaw.days.map((d) => ({
         id: d.id,
         label: d.label,

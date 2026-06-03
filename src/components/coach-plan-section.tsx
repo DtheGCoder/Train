@@ -16,6 +16,13 @@ import {
   Pencil,
   AlertTriangle,
   Trophy,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+  Repeat,
+  Moon,
+  Info,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui";
 import {
@@ -37,6 +44,12 @@ export type ActiveDay = {
   routineId: string;
   exerciseCount: number;
 };
+export type CoachLogEntry = {
+  at: string;
+  day: string;
+  kind: string;
+  text: string;
+};
 export type ActiveProgram = {
   id: string;
   name: string;
@@ -49,6 +62,7 @@ export type ActiveProgram = {
   schedule: string;
   benefits: string;
   days: ActiveDay[];
+  coachLog: CoachLogEntry[];
 };
 export type Recommendation = {
   key: string;
@@ -181,6 +195,60 @@ function RecommendationCard({ rec }: { rec: Recommendation }) {
   );
 }
 
+const LOG_ICON: Record<
+  string,
+  { Icon: typeof TrendingUp; cls: string }
+> = {
+  progress: { Icon: TrendingUp, cls: "text-success" },
+  hold: { Icon: Minus, cls: "text-muted" },
+  reduce: { Icon: TrendingDown, cls: "text-amber-400" },
+  swap: { Icon: Repeat, cls: "text-primary" },
+  deload: { Icon: Moon, cls: "text-sky-400" },
+  note: { Icon: Info, cls: "text-muted" },
+};
+
+function CoachLog({ entries }: { entries: CoachLogEntry[] }) {
+  const [open, setOpen] = useState(false);
+  if (entries.length === 0) return null;
+  const shown = open ? entries.slice(0, 20) : entries.slice(0, 3);
+  return (
+    <div className="rounded-xl border border-border bg-surface p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <History className="size-4 text-primary" />
+        <p className="text-sm font-semibold">Was der Coach angepasst hat</p>
+      </div>
+      <ul className="space-y-2">
+        {shown.map((e, i) => {
+          const meta = LOG_ICON[e.kind] ?? LOG_ICON.note;
+          const date = new Date(e.at).toLocaleDateString("de-DE", {
+            day: "2-digit",
+            month: "2-digit",
+          });
+          return (
+            <li key={i} className="flex gap-2">
+              <meta.Icon className={`mt-0.5 size-4 shrink-0 ${meta.cls}`} />
+              <div className="min-w-0">
+                <p className="text-xs leading-snug text-foreground">{e.text}</p>
+                <p className="mt-0.5 text-[10px] uppercase tracking-wide text-muted">
+                  {date} · {e.day}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {entries.length > 3 && (
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="mt-2 text-xs font-medium text-primary hover:underline"
+        >
+          {open ? "Weniger anzeigen" : `Alle ${entries.length} Anpassungen`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ActiveProgramView({
   program,
   onSwitch,
@@ -304,6 +372,8 @@ function ActiveProgramView({
           </ul>
         </div>
       )}
+
+      <CoachLog entries={program.coachLog} />
 
       <div className="grid grid-cols-2 gap-2">
         <Button

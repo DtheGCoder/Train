@@ -17,6 +17,18 @@ import { provisionTaxonomy, provisionUserContent } from "@/lib/provision";
 import { parseRoutineSets, type RoutineSet } from "@/lib/routine-sets";
 import { getProgram } from "@/lib/program-data";
 import { loadCoachProfile } from "@/lib/coach-data";
+import {
+  decideExercise,
+  decideDeload,
+  DELOAD_FACTOR,
+  type CoachLogKind,
+} from "@/lib/coach-program";
+import {
+  e1rmRpe,
+  repRange,
+  analyzeExerciseHistory,
+  roundToIncrement,
+} from "@/lib/coach";
 import { getVersionInfo } from "@/lib/version";
 import { isUpdateActive } from "@/lib/update-status";
 import { readUpdateStatus, writeUpdateStatus } from "@/lib/update-status.server";
@@ -389,20 +401,8 @@ export async function finishWorkout(workoutId: string, name?: string) {
   });
 
   // Gehört das Workout zu einem aktiven Coach-Programm? Dann Cursor weiterschalten
-  // und die Tages-Routine progressiv anpassen.
-  await advanceProgramAfterWorkout(
-    workout.routineId,
-    workout.exercises.map((we) => ({
-      exerciseId: we.exerciseId,
-      sets: we.sets.map((s) => ({
-        weight: s.weight,
-        reps: s.reps,
-        isCompleted: s.isCompleted,
-        setType: s.setType,
-      })),
-    })),
-    user.id,
-  );
+  // und die Tages-Routine wie ein echter Coach anpassen.
+  await advanceProgramAfterWorkout(workout.routineId, user.id);
 
   revalidatePath("/history");
   revalidatePath("/calendar");
@@ -1113,63 +1113,295 @@ export async function deactivateProgram(programId: string) {
 
 // Nach einem Programm-Workout: Cursor auf den nächsten Tag setzen und die
 // Tages-Routine leicht progressiv anpassen (Double Progression).
-type FinishedExercise = {
-  exerciseId: string;
-  sets: { weight: number; reps: number; isCompleted: boolean; setType: string }[];
+type CoachLogEntry = {
+  at: string;
+  day: string;
+  kind: CoachLogKind | "deload" | "note";
+  text: string;
 };
 
+function parseCoachLog(json: string): CoachLogEntry[] {
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? (v as CoachLogEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Kern der Selbstanpassung: nach jedem Programm-Workout wertet der Coach den
+// Verlauf jeder Übung aus und passt die Tages-Routine an (steigern, halten,
+// entlasten, tauschen). Am Durchlauf-Ende wird ggf. ein Deload eingelegt.
 async function advanceProgramAfterWorkout(
   routineId: string | null,
-  workoutExercises: FinishedExercise[],
   userId: string,
 ) {
   if (!routineId) return;
   const day = await db.programDay.findFirst({
     where: { routineId, program: { userId, active: true } },
-    include: { program: { select: { id: true, cursor: true, cycles: true } } },
-  });
-  if (!day) return;
-
-  const len = await db.programDay.count({ where: { programId: day.programId } });
-  const wrapped = day.position + 1 >= len;
-  await db.program.update({
-    where: { id: day.programId },
-    data: {
-      cursor: (day.position + 1) % len,
-      cycles: wrapped ? day.program.cycles + 1 : day.program.cycles,
+    include: {
+      program: {
+        select: {
+          id: true,
+          cursor: true,
+          cycles: true,
+          lastDeloadCycle: true,
+          coachLogJson: true,
+          days: { select: { routineId: true } },
+        },
+      },
     },
   });
+  if (!day) return;
+  const program = day.program;
+  const len = program.days.length;
+  const profile = await loadCoachProfile();
+  const { low } = repRange(profile);
 
-  // Double Progression: wenn alle Arbeitssätze die Ziel-Wdh erreicht haben,
-  // Gewicht leicht erhöhen; sonst die erreichten Werte übernehmen.
-  const res = await db.routineExercise.findMany({
-    where: { routineId },
-    select: { id: true, exerciseId: true, targetReps: true },
-  });
+  // Übungen der Tages-Routine + die letzten beendeten Einheiten dieser Routine.
+  const [res, past] = await Promise.all([
+    db.routineExercise.findMany({
+      where: { routineId },
+      orderBy: { position: "asc" },
+      include: {
+        exercise: {
+          select: {
+            id: true,
+            nameDe: true,
+            mechanic: true,
+            primaryMuscleId: true,
+            equipmentId: true,
+          },
+        },
+      },
+    }),
+    db.workout.findMany({
+      where: { userId, routineId, finishedAt: { not: null } },
+      orderBy: { finishedAt: "desc" },
+      take: 8,
+      select: {
+        finishedAt: true,
+        exercises: {
+          select: {
+            exerciseId: true,
+            sets: {
+              select: {
+                weight: true,
+                reps: true,
+                rpe: true,
+                isCompleted: true,
+                setType: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+  const chrono = past.slice().reverse(); // alt -> neu (aktuelle Einheit zuletzt)
+  const presentIds = new Set(res.map((r) => r.exerciseId));
+  const log: CoachLogEntry[] = [];
+  const now = new Date().toISOString();
+  let fatigueCount = 0;
+  let considered = 0;
+
   for (const re of res) {
-    const we = workoutExercises.find((e) => e.exerciseId === re.exerciseId);
-    if (!we) continue;
-    const working = we.sets.filter(
-      (s) => s.isCompleted && s.setType !== "warmup" && (s.weight > 0 || s.reps > 0),
+    // Verlaufs-Sessions dieser Übung aufbauen.
+    const sessions = [];
+    for (const w of chrono) {
+      const we = w.exercises.find((e) => e.exerciseId === re.exerciseId);
+      if (!we) continue;
+      const working = we.sets.filter(
+        (s) =>
+          s.isCompleted && s.setType !== "warmup" && (s.weight > 0 || s.reps > 0),
+      );
+      if (working.length === 0) continue;
+      const topWeight = Math.max(0, ...working.map((s) => s.weight));
+      const topSet =
+        working
+          .filter((s) => s.weight === topWeight)
+          .sort((a, b) => b.reps - a.reps)[0] ?? working[0];
+      const bestE = Math.max(
+        0,
+        ...working.map((s) => e1rmRpe(s.weight, s.reps, s.rpe)),
+      );
+      sessions.push({
+        date: w.finishedAt!.toISOString(),
+        bestE1RM: bestE,
+        topWeight,
+        topReps: topSet.reps,
+        workSets: working.length,
+      });
+    }
+    if (sessions.length === 0) continue;
+
+    // Aktuelle (gerade beendete) Einheit = letzte mit dieser Übung.
+    const curW = chrono[chrono.length - 1];
+    const curWe = curW.exercises.find((e) => e.exerciseId === re.exerciseId);
+    const curWorking =
+      curWe?.sets.filter(
+        (s) =>
+          s.isCompleted && s.setType !== "warmup" && (s.weight > 0 || s.reps > 0),
+      ) ?? [];
+    if (curWorking.length === 0) continue;
+    considered++;
+
+    const curTop = Math.max(0, ...curWorking.map((s) => s.weight));
+    const rpes = curWorking
+      .map((s) => s.rpe)
+      .filter((r): r is number => r != null);
+    const avgRpe = rpes.length
+      ? rpes.reduce((a, b) => a + b, 0) / rpes.length
+      : null;
+    const hitTarget = curWorking.every((s) => s.reps >= re.targetReps);
+
+    if (analyzeExerciseHistory({ sessions }).needsDeload) fatigueCount++;
+
+    const decision = decideExercise(
+      {
+        routineExerciseId: re.id,
+        exerciseId: re.exerciseId,
+        name: re.exercise.nameDe,
+        mechanic: re.exercise.mechanic,
+        targetReps: re.targetReps,
+        history: { sessions },
+      },
+      { topWeight: curTop, avgRpe, hitTarget },
+      profile,
     );
-    if (working.length === 0) continue;
-    const topWeight = Math.max(0, ...working.map((s) => s.weight));
-    const allHit = working.every((s) => s.reps >= re.targetReps);
-    const step = topWeight >= 40 ? 2.5 : 1.25;
-    const bump = allHit && topWeight > 0 ? step : 0;
-    const perSet: RoutineSet[] = working.map((s) => ({
-      reps: s.reps,
-      weight: s.weight > 0 ? s.weight + bump : 0,
+
+    const setCount = curWorking.length;
+    const a = decision.action;
+
+    if (a.kind === "swap") {
+      // Frische Variante für denselben Muskel finden (gleicher Mechanik-Typ,
+      // möglichst gleiches Equipment), die noch nicht im Plan ist.
+      const candidate =
+        (await db.exercise.findFirst({
+          where: {
+            userId,
+            primaryMuscleId: re.exercise.primaryMuscleId,
+            mechanic: re.exercise.mechanic,
+            equipmentId: re.exercise.equipmentId ?? undefined,
+            id: { notIn: [...presentIds] },
+          },
+          orderBy: { nameDe: "asc" },
+          select: { id: true, nameDe: true },
+        })) ??
+        (await db.exercise.findFirst({
+          where: {
+            userId,
+            primaryMuscleId: re.exercise.primaryMuscleId,
+            id: { notIn: [...presentIds] },
+          },
+          orderBy: { nameDe: "asc" },
+          select: { id: true, nameDe: true },
+        }));
+      if (candidate) {
+        presentIds.delete(re.exerciseId);
+        presentIds.add(candidate.id);
+        await db.routineExercise.update({
+          where: { id: re.id },
+          data: {
+            exerciseId: candidate.id,
+            setsJson: "",
+            targetWeight: 0,
+            targetReps: low,
+          },
+        });
+        log.push({
+          at: now,
+          day: day.label,
+          kind: "swap",
+          text: `${re.exercise.nameDe} → „${candidate.nameDe}": ${decision.message.replace(/^[^:]*:\s*/, "")}`,
+        });
+      } else {
+        log.push({
+          at: now,
+          day: day.label,
+          kind: "hold",
+          text: `${re.exercise.nameDe}: Plateau, aber keine passende Alternative im Katalog – Gewicht gehalten.`,
+        });
+      }
+      continue;
+    }
+
+    // Gewicht/Wdh anwenden (gleichförmige Sätze als neue Vorgabe).
+    const perSet: RoutineSet[] = Array.from({ length: setCount }, () => ({
+      reps: a.reps,
+      weight: a.weight,
     }));
     await db.routineExercise.update({
       where: { id: re.id },
       data: {
         setsJson: JSON.stringify(perSet),
-        targetSets: perSet.length,
-        targetWeight: topWeight + bump,
+        targetSets: setCount,
+        targetReps: a.reps,
+        targetWeight: a.weight,
       },
     });
+    log.push({ at: now, day: day.label, kind: decision.logKind, text: decision.message });
   }
+
+  // Cursor weiter + Durchlauf zählen.
+  const wrapped = day.position + 1 >= len;
+  const newCycles = wrapped ? program.cycles + 1 : program.cycles;
+  let lastDeloadCycle = program.lastDeloadCycle;
+
+  // Am Durchlauf-Ende: Deload prüfen und ggf. alle Tages-Routinen entlasten.
+  if (wrapped) {
+    const fatigueShare = considered > 0 ? fatigueCount / considered : 0;
+    const dl = decideDeload({
+      cyclesDone: newCycles,
+      lastDeloadCycle: program.lastDeloadCycle,
+      fatigueShare,
+    });
+    if (dl.deload) {
+      lastDeloadCycle = newCycles;
+      const dayRoutineIds = program.days.map((d) => d.routineId);
+      const allRe = await db.routineExercise.findMany({
+        where: { routineId: { in: dayRoutineIds } },
+        select: { id: true, targetWeight: true, setsJson: true, targetReps: true, targetSets: true },
+      });
+      for (const re of allRe) {
+        if (re.targetWeight <= 0) continue; // Körpergewicht nicht „entlasten"
+        const newW = roundToIncrement(re.targetWeight * DELOAD_FACTOR, 1.25);
+        let setsJson = re.setsJson;
+        try {
+          const arr = JSON.parse(re.setsJson || "[]") as RoutineSet[];
+          if (Array.isArray(arr) && arr.length > 0) {
+            setsJson = JSON.stringify(
+              arr.map((s) => ({
+                reps: s.reps,
+                weight:
+                  s.weight > 0
+                    ? roundToIncrement(s.weight * DELOAD_FACTOR, 1.25)
+                    : 0,
+              })),
+            );
+          }
+        } catch {
+          /* setsJson bleibt unverändert */
+        }
+        await db.routineExercise.update({
+          where: { id: re.id },
+          data: { targetWeight: newW, setsJson },
+        });
+      }
+      log.push({ at: now, day: "Programm", kind: "deload", text: dl.reason });
+    }
+  }
+
+  const merged = [...log, ...parseCoachLog(program.coachLogJson)].slice(0, 40);
+  await db.program.update({
+    where: { id: program.id },
+    data: {
+      cursor: (day.position + 1) % len,
+      cycles: newCycles,
+      lastDeloadCycle,
+      coachLogJson: JSON.stringify(merged),
+    },
+  });
 }
 
 // Coach bewertet das laufende Programm anhand der echten Trainingsdaten und gibt
