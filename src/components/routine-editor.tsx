@@ -12,6 +12,7 @@ import {
   Loader2,
   Wand2,
   Repeat,
+  Info,
 } from "lucide-react";
 import {
   DndContext,
@@ -37,6 +38,10 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui";
 import { ExerciseBrowser, type ExerciseItem } from "@/components/exercise-browser";
+import {
+  ExercisePreview,
+  type PreviewExercise,
+} from "@/components/exercise-preview";
 import type { RoutineSet } from "@/lib/routine-sets";
 import {
   addRoutineExercise,
@@ -52,11 +57,30 @@ import {
 
 type REx = {
   id: string;
+  exerciseId: string;
   name: string;
+  nameEn: string;
   muscleName: string;
+  equipmentName: string | null;
+  mechanic: string;
+  category: string;
+  instructions: string;
   sets: RoutineSet[];
   targetRestSec: number;
 };
+
+function toPreview(re: REx): PreviewExercise {
+  return {
+    id: re.exerciseId,
+    nameDe: re.name,
+    nameEn: re.nameEn,
+    muscleName: re.muscleName,
+    equipmentName: re.equipmentName,
+    mechanic: re.mechanic,
+    category: re.category,
+    instructions: re.instructions,
+  };
+}
 
 type PickerMode = { mode: "add" } | { mode: "replace"; exId: string };
 
@@ -193,6 +217,9 @@ export function RoutineEditor({
       setImproveMsgs(res.messages);
     });
 
+  // Übungs-Vorschau (Video & Details) – direkt im Plan, ohne wegzunavigieren.
+  const [preview, setPreview] = useState<PreviewExercise | null>(null);
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -273,6 +300,7 @@ export function RoutineEditor({
                   re={re}
                   onRemove={() => onRemove(re.id)}
                   onSwap={() => setPicker({ mode: "replace", exId: re.id })}
+                  onInfo={() => setPreview(toPreview(re))}
                   onSetField={setField}
                   onCommitSets={commitSets}
                   onAddSet={() => addSet(re.id)}
@@ -320,6 +348,8 @@ export function RoutineEditor({
           </div>
         </div>
       )}
+
+      <ExercisePreview item={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }
@@ -330,6 +360,7 @@ function SortableExercise({
   re,
   onRemove,
   onSwap,
+  onInfo,
   onSetField,
   onCommitSets,
   onAddSet,
@@ -339,6 +370,7 @@ function SortableExercise({
   re: REx;
   onRemove: () => void;
   onSwap: () => void;
+  onInfo: () => void;
   onSetField: (
     exId: string,
     idx: number,
@@ -387,6 +419,13 @@ function SortableExercise({
           <p className="truncate font-medium">{re.name}</p>
           <p className="text-xs text-muted">{re.muscleName}</p>
         </div>
+        <button
+          onClick={onInfo}
+          className="rounded-lg p-2 text-muted hover:text-primary"
+          aria-label="Video & Details"
+        >
+          <Info className="size-4" />
+        </button>
         <button
           onClick={onSwap}
           className="rounded-lg p-2 text-muted hover:text-primary"

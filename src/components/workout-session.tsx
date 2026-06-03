@@ -23,10 +23,13 @@ import {
   Info,
   Sparkles,
 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { ExerciseBrowser, type ExerciseItem } from "@/components/exercise-browser";
+import {
+  ExercisePreview,
+  type PreviewExercise,
+} from "@/components/exercise-preview";
 import { RestTimer } from "@/components/rest-timer";
 import { CoachCard, type CoachReaction } from "@/components/coach-card";
 import {
@@ -79,9 +82,14 @@ type ExState = {
   id: string;
   exerciseId: string;
   name: string;
+  nameEn: string;
   muscleName: string;
   muscleSlug: string;
   equipmentSlug: string | null;
+  equipmentName: string | null;
+  mechanic: string;
+  category: string;
+  instructions: string;
   sets: SetState[];
 };
 type Initial = {
@@ -163,6 +171,8 @@ export function WorkoutSession({
   const [animExIds, setAnimExIds] = useState<Set<string>>(() => new Set());
   // Coach-Block ein-/ausklappen (gemeinsam für alle Übungen, Vorliebe gespeichert).
   const [coachOpen, setCoachOpen] = useState(true);
+  // Übungs-Vorschau (Video & Details) – direkt im Workout, ohne wegzunavigieren.
+  const [preview, setPreview] = useState<PreviewExercise | null>(null);
 
   useEffect(() => {
     // Beim Beenden einfrieren: kein Interval mehr, der Wert bleibt stehen.
@@ -412,9 +422,14 @@ export function WorkoutSession({
           id: created.id,
           exerciseId: created.exerciseId,
           name: item.nameDe,
+          nameEn: item.nameEn,
           muscleName: item.muscleName,
           muscleSlug: item.muscleSlug,
           equipmentSlug: item.equipmentSlug,
+          equipmentName: item.equipmentName,
+          mechanic: item.mechanic,
+          category: item.category,
+          instructions: item.instructions,
           sets: created.sets.map((s) => ({
             id: s.id,
             setNumber: s.setNumber,
@@ -656,13 +671,28 @@ export function WorkoutSession({
           <div className="rounded-xl border border-border bg-surface">
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <div className="min-w-0">
-                <Link
-                  href={`/exercises/${ex.exerciseId}`}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPreview({
+                      id: ex.exerciseId,
+                      nameDe: ex.name,
+                      nameEn: ex.nameEn,
+                      muscleName: ex.muscleName,
+                      equipmentName: ex.equipmentName,
+                      mechanic: ex.mechanic,
+                      category: ex.category,
+                      instructions: ex.instructions,
+                    })
+                  }
                   className="inline-flex items-center gap-1.5 font-semibold hover:text-primary active:text-primary"
                 >
                   <span className="truncate">{ex.name}</span>
-                  <Info className="size-3.5 shrink-0 text-muted" aria-label="Details ansehen" />
-                </Link>
+                  <Info
+                    className="size-3.5 shrink-0 text-muted"
+                    aria-label="Video & Details ansehen"
+                  />
+                </button>
                 <p className="text-xs text-muted">{ex.muscleName}</p>
                 {prev && prev.length > 0 && (
                   <p className="mt-0.5 truncate text-xs text-muted">
@@ -911,6 +941,8 @@ export function WorkoutSession({
           </div>
         </div>
       )}
+
+      <ExercisePreview item={preview} onClose={() => setPreview(null)} />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { sessionAdvice } from "@/lib/coach";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CoachProfileForm } from "@/components/coach-profile-form";
+import { AvatarUploader } from "@/components/avatar-uploader";
 import {
   Sparkles,
   ShieldCheck,
@@ -101,6 +102,13 @@ export default async function ProfilePage() {
             steuert der Coach Last und Pausen spürbar genauer.
           </InfoBox>
         </Card>
+      )}
+
+      {user && (
+        <AvatarUploader
+          name={user.displayName ?? user.username}
+          avatar={user.avatar}
+        />
       )}
 
       <CoachProfileForm profile={p} equipment={equipment} />

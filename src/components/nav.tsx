@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/lib/actions";
+import { Avatar } from "@/components/avatar";
 import type { SessionUser } from "@/lib/auth";
 
 const items = [
@@ -69,7 +70,15 @@ export function Nav({ user }: { user: SessionUser | null }) {
                 : "text-muted hover:bg-surface-2 hover:text-foreground",
             )}
           >
-            <UserCog className="size-5" />
+            {user ? (
+              <Avatar
+                src={user.avatar}
+                name={user.displayName ?? user.username}
+                className="size-5 text-[9px]"
+              />
+            ) : (
+              <UserCog className="size-5" />
+            )}
             Coach & Profil
           </Link>
 

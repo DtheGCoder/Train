@@ -24,7 +24,9 @@ export default async function RoutineDetail({
     include: {
       exercises: {
         orderBy: { position: "asc" },
-        include: { exercise: { include: { primaryMuscle: true } } },
+        include: {
+          exercise: { include: { primaryMuscle: true, equipment: true } },
+        },
       },
     },
   });
@@ -122,8 +124,14 @@ export default async function RoutineDetail({
         name={routine.name}
         exercises={routine.exercises.map((re) => ({
           id: re.id,
+          exerciseId: re.exerciseId,
           name: re.exercise.nameDe,
+          nameEn: re.exercise.nameEn,
           muscleName: re.exercise.primaryMuscle.nameDe,
+          equipmentName: re.exercise.equipment?.nameDe ?? null,
+          mechanic: re.exercise.mechanic,
+          category: re.exercise.category,
+          instructions: re.exercise.instructions,
           sets: parseRoutineSets(re),
           targetRestSec: re.targetRestSec,
         }))}

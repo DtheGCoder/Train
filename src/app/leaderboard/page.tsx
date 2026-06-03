@@ -18,7 +18,7 @@ export default async function LeaderboardPage() {
   // Kennzahlen über ALLE Accounts sammeln.
   const [users, workouts] = await Promise.all([
     db.user.findMany({
-      select: { id: true, username: true, displayName: true },
+      select: { id: true, username: true, displayName: true, avatar: true },
     }),
     db.workout.findMany({
       where: { finishedAt: { not: null } },
@@ -41,6 +41,7 @@ export default async function LeaderboardPage() {
 
   type Acc = {
     username: string;
+    avatar: string | null;
     volume: number;
     workouts: number;
     sets: number;
@@ -53,6 +54,7 @@ export default async function LeaderboardPage() {
   for (const u of users) {
     acc.set(u.id, {
       username: u.displayName ?? u.username,
+      avatar: u.avatar,
       volume: 0,
       workouts: 0,
       sets: 0,
@@ -119,6 +121,7 @@ export default async function LeaderboardPage() {
     return {
       userId,
       username: a.username,
+      avatar: a.avatar,
       score: score.total,
       workouts: a.workouts,
       volume: a.volume,

@@ -11,6 +11,7 @@ export type SessionUser = {
   id: string;
   username: string; // Login-Name
   displayName: string | null; // Anzeigename (Fallback: username)
+  avatar: string | null; // Profilbild (data-URL) oder null
   isAdmin: boolean;
 };
 
@@ -74,6 +75,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     id: session.user.id,
     username: session.user.username,
     displayName: session.user.displayName,
+    avatar: session.user.avatar,
     isAdmin: session.user.isAdmin,
   };
 });

@@ -72,6 +72,43 @@ export async function logout() {
   redirect("/login");
 }
 
+/* ---------------- Profilbild ---------------- */
+
+export type AvatarState = { ok?: boolean; error?: string } | undefined;
+
+// Speichert ein (clientseitig klein skaliertes) Profilbild als data-URL.
+// Begrenzt Größe und Format, damit die DB schlank bleibt.
+export async function updateAvatar(
+  _prev: AvatarState,
+  formData: FormData,
+): Promise<AvatarState> {
+  const user = await requireUser();
+  const dataUrl = String(formData.get("avatar") ?? "");
+
+  if (!dataUrl) return { error: "Kein Bild empfangen." };
+  if (!/^data:image\/(png|jpeg|webp);base64,/.test(dataUrl)) {
+    return { error: "Ungültiges Bildformat." };
+  }
+  // ~300 KB Limit (data-URL ist ~33 % größer als die Rohdaten).
+  if (dataUrl.length > 400_000) {
+    return { error: "Bild ist zu groß. Bitte ein kleineres wählen." };
+  }
+
+  await db.user.update({ where: { id: user.id }, data: { avatar: dataUrl } });
+  revalidatePath("/profile");
+  revalidatePath("/");
+  revalidatePath("/leaderboard");
+  return { ok: true };
+}
+
+export async function removeAvatar() {
+  const user = await requireUser();
+  await db.user.update({ where: { id: user.id }, data: { avatar: null } });
+  revalidatePath("/profile");
+  revalidatePath("/");
+  revalidatePath("/leaderboard");
+}
+
 // Admin: neuen User anlegen. Nur für eingeloggte Admins.
 export async function createUser(formData: FormData) {
   await requireAdmin();

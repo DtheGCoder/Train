@@ -1,8 +1,9 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
-import { Play, Dumbbell, ChevronRight, Flame, UserCog } from "lucide-react";
+import { Play, Dumbbell, ChevronRight, Flame } from "lucide-react";
 import { Card, Button, LinkButton, PageHeader } from "@/components/ui";
+import { Avatar } from "@/components/avatar";
 import { startWorkout } from "@/lib/actions";
 import { formatDuration } from "@/lib/utils";
 import { format } from "date-fns";
@@ -40,15 +41,19 @@ export default async function Home() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Train"
+        title={`Hallo, ${user.displayName ?? user.username}`}
         subtitle="Bereit fürs Training?"
         action={
           <Link
             href="/profile"
             aria-label="Coach & Profil"
-            className="flex size-11 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-foreground active:bg-surface-2 md:hidden"
+            className="rounded-full ring-2 ring-transparent transition hover:ring-primary/40 active:ring-primary/60"
           >
-            <UserCog className="size-5" />
+            <Avatar
+              src={user.avatar}
+              name={user.displayName ?? user.username}
+              className="size-11 text-sm"
+            />
           </Link>
         }
       />

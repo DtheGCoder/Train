@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { Trophy, Crown, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Avatar } from "@/components/avatar";
 import type { ScoreLine } from "@/lib/coach";
 
 export type LeaderboardRow = {
   userId: string;
   username: string;
+  avatar: string | null;
   score: number;
   workouts: number;
   volume: number;
@@ -17,7 +19,6 @@ export type LeaderboardRow = {
 };
 
 const fmt = (n: number) => Math.round(n).toLocaleString("de-DE");
-const initials = (name: string) => name.slice(0, 2).toUpperCase();
 
 const PLACE = {
   1: { ring: "ring-amber-400", badge: "bg-amber-400 text-black", pedestal: "h-20 bg-amber-400/20" },
@@ -61,14 +62,11 @@ export function Leaderboard({
               className="flex min-w-0 flex-1 flex-col items-center"
             >
               {place === 1 && <Crown className="mb-1 size-5 text-amber-400" />}
-              <div
-                className={cn(
-                  "flex size-14 items-center justify-center rounded-full bg-surface-2 text-sm font-bold ring-2",
-                  p.ring,
-                )}
-              >
-                {initials(row.username)}
-              </div>
+              <Avatar
+                src={row.avatar}
+                name={row.username}
+                className={cn("size-14 text-sm ring-2", p.ring)}
+              />
               <p className="mt-2 w-full truncate text-center text-sm font-semibold">
                 {row.username}
                 {isMe && <span className="text-muted"> (du)</span>}
@@ -123,9 +121,11 @@ export function Leaderboard({
                   <span className="w-5 text-center text-sm font-bold tabular-nums text-muted">
                     {i + 1}
                   </span>
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface-2 text-xs font-bold">
-                    {initials(r.username)}
-                  </span>
+                  <Avatar
+                    src={r.avatar}
+                    name={r.username}
+                    className="size-9 text-xs"
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">
                       {r.username}
