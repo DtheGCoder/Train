@@ -146,6 +146,8 @@ export function WorkoutSession({
   // Übung animiert die Karte als Ganzes, nicht zusätzlich jede Zeile darin.
   const [animSetIds, setAnimSetIds] = useState<Set<string>>(() => new Set());
   const [animExIds, setAnimExIds] = useState<Set<string>>(() => new Set());
+  // Coach-Block ein-/ausklappen (gemeinsam für alle Übungen, Vorliebe gespeichert).
+  const [coachOpen, setCoachOpen] = useState(true);
 
   useEffect(() => {
     // Beim Beenden einfrieren: kein Interval mehr, der Wert bleibt stehen.
@@ -156,6 +158,21 @@ export function WorkoutSession({
     const t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, [initial.startedAt, isFinishing]);
+
+  // Gespeicherte Einklapp-Vorliebe laden (nach dem Mount, kein Hydration-Mismatch).
+  useEffect(() => {
+    if (localStorage.getItem("coachOpen") !== "0") return;
+    const id = requestAnimationFrame(() => setCoachOpen(false));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  // Vorliebe speichern.
+  useEffect(() => {
+    try {
+      localStorage.setItem("coachOpen", coachOpen ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [coachOpen]);
 
   const stats = useMemo(() => {
     let volume = 0;
@@ -617,6 +634,8 @@ export function WorkoutSession({
                 setsPlanned={setsPlanned}
                 warmup={warmup}
                 tempo={tempoCue(coach.profile)}
+                collapsed={!coachOpen}
+                onToggleCollapsed={() => setCoachOpen((v) => !v)}
               />
 
               {/* Spaltenkopf */}

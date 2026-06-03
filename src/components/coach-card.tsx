@@ -9,6 +9,7 @@ import {
   Flag,
   Flame,
   HelpCircle,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SetRecommendation, WarmupSet } from "@/lib/coach";
@@ -45,6 +46,8 @@ export function CoachCard({
   setsPlanned = 0,
   warmup = [],
   tempo,
+  collapsed = false,
+  onToggleCollapsed,
 }: {
   rec: SetRecommendation | null;
   reaction: CoachReaction;
@@ -58,11 +61,51 @@ export function CoachCard({
   warmup?: WarmupSet[];
   // Technik-/Tempo-Hinweis.
   tempo?: string;
+  // Einklapp-Status + Umschalter (vom Workout gesteuert, gemeinsam für alle).
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 }) {
   const [info, setInfo] = useState(false);
   const repText =
     rec && (rec.repLow === rec.repHigh ? `${rec.reps}` : `${rec.repLow}–${rec.repHigh}`);
   const pct = setsPlanned > 0 ? Math.min(100, (setsDone / setsPlanned) * 100) : 0;
+
+  // Eingeklappt: nur eine schlanke Zeile mit Kurz-Info + Aufklappen.
+  if (collapsed) {
+    const summary = done
+      ? "Übung erledigt"
+      : rec && rec.hasBaseline
+        ? `${rec.weight} kg × ${repText}`
+        : "Ersten Satz eintragen";
+    return (
+      <div
+        className={cn(
+          "mx-2 mb-1 rounded-xl border px-3 py-2",
+          done ? "border-success/30 bg-success/5" : "border-primary/25 bg-primary/5",
+        )}
+      >
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-expanded={false}
+          className="flex w-full items-center gap-2 text-left"
+        >
+          {done ? (
+            <CircleCheckBig className="size-4 shrink-0 text-success" />
+          ) : (
+            <Sparkles className="size-4 shrink-0 text-primary" />
+          )}
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+            Coach
+          </span>
+          <span className="min-w-0 flex-1 truncate text-sm tabular-nums text-muted">
+            {summary}
+          </span>
+          <ChevronDown className="size-4 shrink-0 text-muted" />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -88,15 +131,28 @@ export function CoachCard({
             {done ? "Übung erledigt" : "Coach"}
           </span>
         </div>
-        {!done && rec && rec.hasBaseline && (
-          <button
-            type="button"
-            onClick={onLimitTest}
-            className="flex shrink-0 items-center gap-1 rounded-md bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary active:scale-95"
-          >
-            <Zap className="size-3.5" /> Limit-Test
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {!done && rec && rec.hasBaseline && (
+            <button
+              type="button"
+              onClick={onLimitTest}
+              className="flex items-center gap-1 rounded-md bg-primary/15 px-2.5 py-1 text-xs font-semibold text-primary active:scale-95"
+            >
+              <Zap className="size-3.5" /> Limit-Test
+            </button>
+          )}
+          {onToggleCollapsed && (
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              aria-expanded={true}
+              aria-label="Coach-Block einklappen"
+              className="flex size-7 items-center justify-center rounded-md text-muted hover:bg-surface-2 hover:text-foreground active:scale-95"
+            >
+              <ChevronDown className="size-4 rotate-180" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Empfehlung */}
