@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="640" viewBox="0 0 1100 640" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+  <rect width="1100" height="640" rx="16" fill="#0a0a0b"/>
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0 0 L7 3 L0 6 z" fill="#8b8b94"/>
+    </marker>
+  </defs>
+  <text x="40" y="46" fill="#ededed" font-size="24" font-weight="800">Datenmodell</text>
+  <text x="40" y="72" fill="#8b8b94" font-size="14">Vereinfachtes ER-Diagramm der wichtigsten Entitäten (Prisma / SQLite)</text>
+
+  <!-- helper style: boxes -->
+  <!-- User -->
+  <g transform="translate(40,110)">
+    <rect width="200" height="116" rx="12" fill="#10101a" stroke="#6366f1" stroke-opacity="0.6"/>
+    <text x="14" y="26" fill="#6366f1" font-size="15" font-weight="800">User</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">username, displayName</text>
+      <text x="14" y="66">avatar (Profilbild)</text>
+      <text x="14" y="84">passwordHash, isAdmin</text>
+      <text x="14" y="102">+ Settings (1:1)</text>
+    </g>
+  </g>
+
+  <!-- Settings -->
+  <g transform="translate(40,270)">
+    <rect width="200" height="116" rx="12" fill="#141417" stroke="#2a2a31"/>
+    <text x="14" y="26" fill="#ededed" font-size="15" font-weight="800">Settings</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">goal, experience</text>
+      <text x="14" y="66">coachStyle, repStyle</text>
+      <text x="14" y="84">bodyweight, height, age</text>
+      <text x="14" y="102">trainingDays, equipment</text>
+    </g>
+  </g>
+
+  <!-- Exercise -->
+  <g transform="translate(300,110)">
+    <rect width="210" height="116" rx="12" fill="#141417" stroke="#2a2a31"/>
+    <text x="14" y="26" fill="#ededed" font-size="15" font-weight="800">Exercise</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">nameDe / nameEn</text>
+      <text x="14" y="66">primaryMuscle, equipment</text>
+      <text x="14" y="84">mechanic, forceType</text>
+      <text x="14" y="102">instructions (305 Stück)</text>
+    </g>
+  </g>
+
+  <!-- Routine -->
+  <g transform="translate(300,290)">
+    <rect width="210" height="116" rx="12" fill="#141417" stroke="#2a2a31"/>
+    <text x="14" y="26" fill="#ededed" font-size="15" font-weight="800">Routine</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">name, isPreset, isPublic</text>
+      <text x="14" y="66">goal, level, location</text>
+      <text x="14" y="84">category, benefits</text>
+      <text x="14" y="102">fromProgram</text>
+    </g>
+  </g>
+
+  <!-- RoutineExercise -->
+  <g transform="translate(300,450)">
+    <rect width="210" height="104" rx="12" fill="#141417" stroke="#2a2a31"/>
+    <text x="14" y="26" fill="#ededed" font-size="15" font-weight="800">RoutineExercise</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">position, targetSets/Reps</text>
+      <text x="14" y="66">targetWeight, targetRest</text>
+      <text x="14" y="84">setsJson (Sätze einzeln)</text>
+    </g>
+  </g>
+
+  <!-- Program -->
+  <g transform="translate(580,290)">
+    <rect width="210" height="116" rx="12" fill="#10101a" stroke="#6366f1" stroke-opacity="0.6"/>
+    <text x="14" y="26" fill="#6366f1" font-size="15" font-weight="800">Program</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">key, name, goal, level</text>
+      <text x="14" y="66">daysPerWeek, cursor</text>
+      <text x="14" y="84">cycles, lastDeloadCycle</text>
+      <text x="14" y="102">coachLogJson</text>
+    </g>
+  </g>
+  <!-- ProgramDay -->
+  <g transform="translate(580,450)">
+    <rect width="210" height="80" rx="12" fill="#141417" stroke="#2a2a31"/>
+    <text x="14" y="26" fill="#ededed" font-size="15" font-weight="800">ProgramDay</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">position, label, focus</text>
+      <text x="14" y="66">→ routineId</text>
+    </g>
+  </g>
+
+  <!-- Workout -->
+  <g transform="translate(860,110)">
+    <rect width="200" height="96" rx="12" fill="#141417" stroke="#2a2a31"/>
+    <text x="14" y="26" fill="#ededed" font-size="15" font-weight="800">Workout</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">name, startedAt</text>
+      <text x="14" y="66">finishedAt</text>
+      <text x="14" y="84">totalVolume → routineId</text>
+    </g>
+  </g>
+  <!-- WorkoutExercise -->
+  <g transform="translate(860,250)">
+    <rect width="200" height="70" rx="12" fill="#141417" stroke="#2a2a31"/>
+    <text x="14" y="26" fill="#ededed" font-size="15" font-weight="800">WorkoutExercise</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">position → exerciseId</text>
+    </g>
+  </g>
+  <!-- WorkoutSet -->
+  <g transform="translate(860,360)">
+    <rect width="200" height="96" rx="12" fill="#141417" stroke="#2a2a31"/>
+    <text x="14" y="26" fill="#ededed" font-size="15" font-weight="800">WorkoutSet</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">weight, reps, rpe</text>
+      <text x="14" y="66">setType, isCompleted</text>
+      <text x="14" y="84">restSec</text>
+    </g>
+  </g>
+  <!-- PersonalRecord -->
+  <g transform="translate(860,500)">
+    <rect width="200" height="80" rx="12" fill="#141417" stroke="#2a2a31"/>
+    <text x="14" y="26" fill="#ededed" font-size="15" font-weight="800">PersonalRecord</text>
+    <g fill="#cfcfd6" font-size="12">
+      <text x="14" y="48">recordType, value</text>
+      <text x="14" y="66">achievedAt</text>
+    </g>
+  </g>
+
+  <!-- relations -->
+  <g stroke="#8b8b94" stroke-width="1.5" fill="none">
+    <line x1="140" y1="226" x2="140" y2="270" marker-end="url(#a)"/>           <!-- User->Settings -->
+    <line x1="240" y1="160" x2="300" y2="160" marker-end="url(#a)"/>           <!-- User->Exercise -->
+    <line x1="240" y1="180" x2="300" y2="330" marker-end="url(#a)"/>           <!-- User->Routine -->
+    <line x1="405" y1="406" x2="405" y2="450" marker-end="url(#a)"/>           <!-- Routine->RoutineExercise -->
+    <line x1="510" y1="160" x2="600" y2="290" marker-end="url(#a)"/>           <!-- Exercise->Program(area) (illustrativ) -->
+    <line x1="685" y1="406" x2="685" y2="450" marker-end="url(#a)"/>           <!-- Program->ProgramDay -->
+    <line x1="790" y1="490" x2="510" y2="500" marker-end="url(#a)"/>           <!-- ProgramDay->Routine(via routineId) -->
+    <line x1="860" y1="158" x2="510" y2="330" marker-end="url(#a)"/>           <!-- Workout->Routine -->
+    <line x1="960" y1="206" x2="960" y2="250" marker-end="url(#a)"/>           <!-- Workout->WorkoutExercise -->
+    <line x1="960" y1="320" x2="960" y2="360" marker-end="url(#a)"/>           <!-- WorkoutExercise->WorkoutSet -->
+  </g>
+  <text x="40" y="600" fill="#8b8b94" font-size="12">Jeder Nutzer besitzt seinen eigenen Katalog, eigene Vorlagen, Programme und seinen Trainingsverlauf (sauber getrennt).</text>
+</svg>
