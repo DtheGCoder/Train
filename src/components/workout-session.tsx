@@ -78,6 +78,7 @@ type ExState = {
   name: string;
   muscleName: string;
   muscleSlug: string;
+  equipmentSlug: string | null;
   sets: SetState[];
 };
 type Initial = {
@@ -409,6 +410,7 @@ export function WorkoutSession({
           name: item.nameDe,
           muscleName: item.muscleName,
           muscleSlug: item.muscleSlug,
+          equipmentSlug: item.equipmentSlug,
           sets: created.sets.map((s) => ({
             id: s.id,
             setNumber: s.setNumber,
@@ -609,9 +611,12 @@ export function WorkoutSession({
           state: sessionStateOf(ex),
           insight: insightOf(ex),
         });
-        // Aufwärm-Rampe nur vor dem ersten Arbeitssatz vorschlagen.
+        // Aufwärm-Rampe nur vor dem ersten Arbeitssatz – und NICHT bei
+        // Körpergewichtsübungen (z. B. Liegestütze): unter dem eigenen
+        // Körpergewicht „leichter" aufzuwärmen geht physisch nicht.
+        const isBodyweight = ex.equipmentSlug === "bodyweight";
         const warmup =
-          setsDone === 0 && rec.hasBaseline
+          setsDone === 0 && rec.hasBaseline && !isBodyweight
             ? warmupPlan(rec.weight, coach.profile)
             : [];
         return (

@@ -136,6 +136,7 @@ export default async function WorkoutPage({
       name: we.exercise.nameDe,
       muscleName: we.exercise.primaryMuscle.nameDe,
       muscleSlug: we.exercise.primaryMuscle.slug,
+      equipmentSlug: we.exercise.equipment?.slug ?? null,
       sets: we.sets.map((s) => ({
         id: s.id,
         setNumber: s.setNumber,
