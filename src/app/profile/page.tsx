@@ -13,6 +13,7 @@ import {
   Activity,
   ChevronRight,
   Lightbulb,
+  BookOpen,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -57,6 +58,21 @@ export default async function ProfilePage() {
           <p className="text-sm text-muted">
             Schonungslos ehrliche Auswertung deines Trainings — Konsistenz, Balance,
             Kraftentwicklung und konkrete Prioritäten.
+          </p>
+        </div>
+        <ChevronRight className="size-5 shrink-0 text-muted" />
+      </Link>
+
+      <Link
+        href="/wissen"
+        className="flex items-center gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-primary/40 hover:bg-primary/5"
+      >
+        <BookOpen className="size-5 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">Trainingswissen</p>
+          <p className="text-sm text-muted">
+            Die Wissensbasis des Coaches: Volumen, Wiederholungen, Pausen,
+            Progression, Erholung, Ernährung & mehr.
           </p>
         </div>
         <ChevronRight className="size-5 shrink-0 text-muted" />

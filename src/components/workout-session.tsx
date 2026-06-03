@@ -21,6 +21,7 @@ import {
   Loader2,
   ArrowRight,
   Info,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -33,6 +34,7 @@ import {
   muscleQuality,
   type MuscleStatus,
 } from "@/components/muscle-map";
+import { SESSION_TOTAL_HIGH } from "@/lib/coach-knowledge";
 import { setTypeLabels, setTypeShort } from "@/lib/labels";
 import { formatDuration, cn } from "@/lib/utils";
 import {
@@ -534,6 +536,18 @@ export function WorkoutSession({
 
   const finishDuration = formatDuration(finishedElapsed ?? elapsed);
 
+  // Gesamtumfang im Blick behalten (große-Ganzes-Pacing).
+  const plannedWorkSets = exercises.reduce(
+    (s, ex) => s + workingSetsOf(ex).length,
+    0,
+  );
+  const pacingTip =
+    plannedWorkSets >= SESSION_TOTAL_HIGH
+      ? `Großes Pensum: ${plannedWorkSets} Arbeitssätze geplant. Teil dir die Kraft ein – die ersten Übungen mit 1–2 Wdh in Reserve, sonst geht am Ende die Luft aus.`
+      : plannedWorkSets >= 16
+        ? `${plannedWorkSets} Arbeitssätze geplant. Behalt das große Ganze im Blick – nicht bei den ersten Übungen verausgaben.`
+        : null;
+
   return (
     <div className="space-y-4 pb-28">
       {/* Abschluss-Feier + Übersicht */}
@@ -597,6 +611,17 @@ export function WorkoutSession({
       {exercises.length === 0 && (
         <div className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted">
           Noch keine Übungen. Füge unten welche hinzu.
+        </div>
+      )}
+
+      {/* Pacing: das ganze Workout im Blick behalten */}
+      {!isFinishing && pacingTip && (
+        <div className="flex gap-2.5 rounded-xl border border-primary/25 bg-primary/5 px-3 py-2.5">
+          <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" />
+          <p className="text-xs leading-snug text-muted">
+            <span className="font-semibold text-primary">Coach-Pacing:</span>{" "}
+            {pacingTip}
+          </p>
         </div>
       )}
 
