@@ -822,6 +822,33 @@ export async function removeRoutineExercise(id: string, routineId: string) {
   revalidatePath(`/routines/${routineId}`);
 }
 
+// Eine Plan-Übung gegen eine andere austauschen. Position, Sätze und Pause
+// bleiben erhalten (z. B. Langhantel- gegen Kurzhantel-Bankdrücken bei 3×10).
+export async function replaceRoutineExercise(
+  id: string,
+  routineId: string,
+  newExerciseId: string,
+) {
+  const user = await requireUser();
+  // Beide gehören dem Nutzer (Vorlage + Zielübung)?
+  const [re, ex] = await Promise.all([
+    db.routineExercise.findFirst({
+      where: { id, routine: { userId: user.id } },
+      select: { id: true },
+    }),
+    db.exercise.findFirst({
+      where: { id: newExerciseId, userId: user.id },
+      select: { id: true },
+    }),
+  ]);
+  if (!re || !ex) return;
+  await db.routineExercise.update({
+    where: { id },
+    data: { exerciseId: newExerciseId },
+  });
+  revalidatePath(`/routines/${routineId}`);
+}
+
 // Individuelle Sätze einer Plan-Übung setzen (pro Satz Gewicht + Wdh).
 export async function updateRoutineExerciseSets(
   id: string,

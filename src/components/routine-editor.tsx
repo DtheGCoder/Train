@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   Play,
   Trash2,
@@ -11,13 +11,37 @@ import {
   Sparkles,
   Loader2,
   Wand2,
+  Repeat,
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import {
+  restrictToVerticalAxis,
+  restrictToParentElement,
+} from "@dnd-kit/modifiers";
+import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui";
 import { ExerciseBrowser, type ExerciseItem } from "@/components/exercise-browser";
 import type { RoutineSet } from "@/lib/routine-sets";
 import {
   addRoutineExercise,
   removeRoutineExercise,
+  replaceRoutineExercise,
   updateRoutineExercise,
   updateRoutineExerciseSets,
   reorderRoutineExercises,
@@ -34,14 +58,7 @@ type REx = {
   targetRestSec: number;
 };
 
-const GAP = 12; // entspricht space-y-3 (0.75rem)
-
-function move<T>(arr: T[], from: number, to: number): T[] {
-  const next = arr.slice();
-  const [item] = next.splice(from, 1);
-  next.splice(to, 0, item);
-  return next;
-}
+type PickerMode = { mode: "add" } | { mode: "replace"; exId: string };
 
 export function RoutineEditor({
   routineId,
@@ -58,12 +75,12 @@ export function RoutineEditor({
   muscles: { slug: string; name: string }[];
   equipment: { slug: string; name: string }[];
 }) {
-  const [showPicker, setShowPicker] = useState(false);
+  const [picker, setPicker] = useState<PickerMode | null>(null);
   const [, startTransition] = useTransition();
 
   // Lokale (optimistische) Kopie. Wird neu gesetzt, wenn sich die Server-Daten
-  // ändern (Signatur über IDs, Sätze und Pause) — das von React empfohlene
-  // Muster „State aus Props ableiten" über einen Vergleichs-State.
+  // ändern (Signatur über IDs, Sätze und Pause) — empfohlenes Muster „State aus
+  // Props ableiten" über einen Vergleichs-State.
   const [order, setOrder] = useState<REx[]>(exercises);
   const sig = exercises
     .map(
@@ -79,87 +96,32 @@ export function RoutineEditor({
     setOrder(exercises);
   }
 
-  // --- Drag & Drop ---------------------------------------------------------
-  const listRef = useRef<HTMLUListElement>(null);
-  const itemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dragTranslate, setDragTranslate] = useState(0);
-  // Arbeits-Order während des Ziehens (nur in Event-Handlern angefasst).
-  const drag = useRef<{
-    grabOffset: number;
-    heights: number[];
-    listTop: number;
-    order: REx[];
-  } | null>(null);
+  // --- Drag & Drop (dnd-kit) ----------------------------------------------
+  const sensors = useSensors(
+    // Maus/Stift: kleiner Schwellwert, damit Klicks auf Felder nicht ziehen.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    // Touch: kurzes Halten startet das Ziehen (sonst kollidiert es mit Scroll).
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 180, tolerance: 6 },
+    }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
-  function slotTop(heights: number[], idx: number, base: number): number {
-    let top = base;
-    for (let i = 0; i < idx; i++) top += heights[i] + GAP;
-    return top;
-  }
-
-  const onHandleDown = (e: React.PointerEvent, id: string) => {
-    const li = itemRefs.current.get(id);
-    const list = listRef.current;
-    if (!li || !list || order.length < 2) return;
-    e.preventDefault();
-    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
-    const liRect = li.getBoundingClientRect();
-    const listRect = list.getBoundingClientRect();
-    const heights = order.map(
-      (re) => itemRefs.current.get(re.id)?.getBoundingClientRect().height ?? 0,
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const oldIndex = order.findIndex((r) => r.id === active.id);
+    const newIndex = order.findIndex((r) => r.id === over.id);
+    if (oldIndex < 0 || newIndex < 0) return;
+    const next = arrayMove(order, oldIndex, newIndex);
+    setOrder(next);
+    startTransition(() =>
+      reorderRoutineExercises(routineId, next.map((r) => r.id)),
     );
-    drag.current = {
-      grabOffset: e.clientY - liRect.top,
-      heights,
-      listTop: listRect.top,
-      order: order.slice(),
-    };
-    setDragId(id);
-    setDragTranslate(0);
-  };
-
-  const onHandleMove = (e: React.PointerEvent) => {
-    const st = drag.current;
-    if (!st || !dragId) return;
-    const cur = st.order;
-    const dragIdx = cur.findIndex((r) => r.id === dragId);
-    if (dragIdx < 0) return;
-    const pointerTop = e.clientY - st.grabOffset;
-    const center = pointerTop + st.heights[dragIdx] / 2;
-
-    let acc = st.listTop;
-    let target = cur.length - 1;
-    for (let i = 0; i < cur.length; i++) {
-      const slotCenter = acc + st.heights[i] / 2;
-      if (center < slotCenter) {
-        target = i;
-        break;
-      }
-      acc += st.heights[i] + GAP;
-    }
-
-    let finalIdx = dragIdx;
-    if (target !== dragIdx) {
-      st.order = move(cur, dragIdx, target);
-      st.heights = move(st.heights, dragIdx, target);
-      setOrder(st.order);
-      finalIdx = target;
-    }
-    setDragTranslate(pointerTop - slotTop(st.heights, finalIdx, st.listTop));
-  };
-
-  const onHandleUp = () => {
-    if (!drag.current) return;
-    const ids = drag.current.order.map((r) => r.id);
-    drag.current = null;
-    setDragId(null);
-    setDragTranslate(0);
-    startTransition(() => reorderRoutineExercises(routineId, ids));
   };
 
   // --- Sätze ---------------------------------------------------------------
-  // Optimistisch updaten und die neuen Sätze direkt persistieren.
+  // Optimistisch updaten; gibt die neuen Sätze für das anschließende Speichern.
   const applySets = (exId: string, fn: (sets: RoutineSet[]) => RoutineSet[]) => {
     let nextSets: RoutineSet[] | null = null;
     setOrder((prev) =>
@@ -172,20 +134,18 @@ export function RoutineEditor({
     return nextSets;
   };
 
-  const commitSets = (exId: string, sets: RoutineSet[]) => {
+  const commitSets = (exId: string, sets: RoutineSet[]) =>
     startTransition(() => updateRoutineExerciseSets(exId, routineId, sets));
-  };
 
   const setField = (
     exId: string,
     idx: number,
     field: "reps" | "weight",
     value: number,
-  ) => {
+  ) =>
     applySets(exId, (sets) =>
       sets.map((s, i) => (i === idx ? { ...s, [field]: value } : s)),
     );
-  };
 
   const addSet = (exId: string) => {
     const next = applySets(exId, (sets) => {
@@ -202,28 +162,36 @@ export function RoutineEditor({
     if (next) commitSets(exId, next);
   };
 
-  // --- Picker / Verbessern -------------------------------------------------
-  const onPick = (item: ExerciseItem) => {
-    setShowPicker(false);
-    startTransition(async () => {
-      await addRoutineExercise(routineId, item.id);
-    });
-  };
+  const updateRest = (exId: string, sec: number) =>
+    startTransition(() =>
+      updateRoutineExercise(exId, routineId, { targetRestSec: sec }),
+    );
 
-  const onRemove = (id: string) => {
+  // --- Picker / Verbessern -------------------------------------------------
+  const onRemove = (id: string) =>
     startTransition(async () => {
       await removeRoutineExercise(id, routineId);
+    });
+
+  const onPick = (item: ExerciseItem) => {
+    const p = picker;
+    setPicker(null);
+    startTransition(async () => {
+      if (p?.mode === "replace") {
+        await replaceRoutineExercise(p.exId, routineId, item.id);
+      } else {
+        await addRoutineExercise(routineId, item.id);
+      }
     });
   };
 
   const [improveMsgs, setImproveMsgs] = useState<string[] | null>(null);
   const [improving, startImprove] = useTransition();
-  const onImprove = () => {
+  const onImprove = () =>
     startImprove(async () => {
       const res = await improveRoutine(routineId);
       setImproveMsgs(res.messages);
     });
-  };
 
   return (
     <div className="space-y-5">
@@ -288,149 +256,37 @@ export function RoutineEditor({
           Noch keine Übungen. Füge unten welche hinzu.
         </div>
       ) : (
-        <ul ref={listRef} className="space-y-3">
-          {order.map((re) => {
-            const dragging = re.id === dragId;
-            return (
-              <li
-                key={re.id}
-                ref={(el) => {
-                  if (el) itemRefs.current.set(re.id, el);
-                  else itemRefs.current.delete(re.id);
-                }}
-                style={
-                  dragging
-                    ? {
-                        transform: `translateY(${dragTranslate}px) scale(1.02)`,
-                        zIndex: 50,
-                        position: "relative",
-                      }
-                    : undefined
-                }
-                className={`rounded-xl border bg-surface p-4 ${
-                  dragging
-                    ? "border-primary/60 shadow-lg shadow-black/30"
-                    : "border-border"
-                }`}
-              >
-                <div className="mb-3 flex items-center gap-2">
-                  <button
-                    onPointerDown={(e) => onHandleDown(e, re.id)}
-                    onPointerMove={onHandleMove}
-                    onPointerUp={onHandleUp}
-                    onPointerCancel={onHandleUp}
-                    className="-ml-1 cursor-grab touch-none rounded-lg p-1.5 text-muted hover:text-foreground active:cursor-grabbing"
-                    aria-label="Verschieben"
-                  >
-                    <GripVertical className="size-5" />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{re.name}</p>
-                    <p className="text-xs text-muted">{re.muscleName}</p>
-                  </div>
-                  <button
-                    onClick={() => onRemove(re.id)}
-                    className="rounded-lg p-2 text-muted hover:text-danger"
-                    aria-label="Entfernen"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </div>
-
-                {/* Individuelle Sätze */}
-                <div className="space-y-1.5">
-                  <div className="grid grid-cols-[2rem_1fr_1fr_2rem] items-center gap-2 px-1 text-[10px] uppercase tracking-wide text-muted">
-                    <span>Satz</span>
-                    <span className="text-center">Gewicht (kg)</span>
-                    <span className="text-center">Wdh.</span>
-                    <span />
-                  </div>
-                  {re.sets.map((s, idx) => (
-                    <div
-                      key={idx}
-                      className="grid grid-cols-[2rem_1fr_1fr_2rem] items-center gap-2"
-                    >
-                      <span className="text-center text-sm font-medium text-muted">
-                        {idx + 1}
-                      </span>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        step="0.5"
-                        defaultValue={s.weight}
-                        onChange={(e) =>
-                          setField(
-                            re.id,
-                            idx,
-                            "weight",
-                            parseFloat(e.target.value) || 0,
-                          )
-                        }
-                        onBlur={() => commitSets(re.id, re.sets)}
-                        className="w-full rounded-md border border-border bg-surface-2 px-2 py-2 text-center text-sm outline-none focus:border-primary"
-                      />
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        step="1"
-                        defaultValue={s.reps}
-                        onChange={(e) =>
-                          setField(
-                            re.id,
-                            idx,
-                            "reps",
-                            parseInt(e.target.value) || 0,
-                          )
-                        }
-                        onBlur={() => commitSets(re.id, re.sets)}
-                        className="w-full rounded-md border border-border bg-surface-2 px-2 py-2 text-center text-sm outline-none focus:border-primary"
-                      />
-                      <button
-                        onClick={() => removeSet(re.id, idx)}
-                        disabled={re.sets.length <= 1}
-                        className="flex items-center justify-center rounded-md p-1.5 text-muted hover:text-danger disabled:opacity-30"
-                        aria-label="Satz entfernen"
-                      >
-                        <X className="size-4" />
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => addSet(re.id)}
-                    className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border py-1.5 text-xs text-muted hover:border-primary hover:text-primary"
-                  >
-                    <Plus className="size-3.5" /> Satz hinzufügen
-                  </button>
-                </div>
-
-                {/* Pause pro Übung */}
-                <label className="mt-3 flex items-center justify-between gap-2">
-                  <span className="text-[11px] uppercase tracking-wide text-muted">
-                    Pause (s)
-                  </span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    step="5"
-                    defaultValue={re.targetRestSec}
-                    onBlur={(e) =>
-                      startTransition(() =>
-                        updateRoutineExercise(re.id, routineId, {
-                          targetRestSec: parseInt(e.target.value) || 0,
-                        }),
-                      )
-                    }
-                    className="w-24 rounded-md border border-border bg-surface-2 px-2 py-1.5 text-center text-sm outline-none focus:border-primary"
-                  />
-                </label>
-              </li>
-            );
-          })}
-        </ul>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          onDragEnd={onDragEnd}
+        >
+          <SortableContext
+            items={order.map((r) => r.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <ul className="space-y-3">
+              {order.map((re) => (
+                <SortableExercise
+                  key={re.id}
+                  re={re}
+                  onRemove={() => onRemove(re.id)}
+                  onSwap={() => setPicker({ mode: "replace", exId: re.id })}
+                  onSetField={setField}
+                  onCommitSets={commitSets}
+                  onAddSet={() => addSet(re.id)}
+                  onRemoveSet={(idx) => removeSet(re.id, idx)}
+                  onUpdateRest={(sec) => updateRest(re.id, sec)}
+                />
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
       )}
 
       <div className="flex flex-col gap-2">
-        <Button variant="secondary" onClick={() => setShowPicker(true)}>
+        <Button variant="secondary" onClick={() => setPicker({ mode: "add" })}>
           <Dumbbell className="size-4" /> Übung hinzufügen
         </Button>
         <form action={deleteRoutine.bind(null, routineId)}>
@@ -440,12 +296,14 @@ export function RoutineEditor({
         </form>
       </div>
 
-      {showPicker && (
+      {picker && (
         <div className="fixed inset-0 z-50 flex flex-col bg-background">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h2 className="font-semibold">Übung wählen</h2>
+            <h2 className="font-semibold">
+              {picker.mode === "replace" ? "Übung austauschen" : "Übung wählen"}
+            </h2>
             <button
-              onClick={() => setShowPicker(false)}
+              onClick={() => setPicker(null)}
               className="rounded-lg p-2 text-muted hover:bg-surface-2"
             >
               <X className="size-5" />
@@ -463,5 +321,158 @@ export function RoutineEditor({
         </div>
       )}
     </div>
+  );
+}
+
+// Eine sortierbare Übungs-Karte. Drag startet nur am Griff (listeners dort),
+// damit die Eingabefelder normal bedienbar bleiben.
+function SortableExercise({
+  re,
+  onRemove,
+  onSwap,
+  onSetField,
+  onCommitSets,
+  onAddSet,
+  onRemoveSet,
+  onUpdateRest,
+}: {
+  re: REx;
+  onRemove: () => void;
+  onSwap: () => void;
+  onSetField: (
+    exId: string,
+    idx: number,
+    field: "reps" | "weight",
+    value: number,
+  ) => void;
+  onCommitSets: (exId: string, sets: RoutineSet[]) => void;
+  onAddSet: () => void;
+  onRemoveSet: (idx: number) => void;
+  onUpdateRest: (sec: number) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: re.id });
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+      className={`rounded-xl border bg-surface p-4 ${
+        isDragging
+          ? "z-50 border-primary/60 opacity-90 shadow-lg shadow-black/40"
+          : "border-border"
+      }`}
+    >
+      <div className="mb-3 flex items-center gap-2">
+        <button
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          className="-ml-1 cursor-grab touch-none rounded-lg p-1.5 text-muted hover:text-foreground active:cursor-grabbing"
+          aria-label="Verschieben"
+        >
+          <GripVertical className="size-5" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{re.name}</p>
+          <p className="text-xs text-muted">{re.muscleName}</p>
+        </div>
+        <button
+          onClick={onSwap}
+          className="rounded-lg p-2 text-muted hover:text-primary"
+          aria-label="Übung austauschen"
+        >
+          <Repeat className="size-4" />
+        </button>
+        <button
+          onClick={onRemove}
+          className="rounded-lg p-2 text-muted hover:text-danger"
+          aria-label="Entfernen"
+        >
+          <Trash2 className="size-4" />
+        </button>
+      </div>
+
+      {/* Individuelle Sätze */}
+      <div className="space-y-1.5">
+        <div className="grid grid-cols-[2rem_1fr_1fr_2rem] items-center gap-2 px-1 text-[10px] uppercase tracking-wide text-muted">
+          <span>Satz</span>
+          <span className="text-center">Gewicht (kg)</span>
+          <span className="text-center">Wdh.</span>
+          <span />
+        </div>
+        {re.sets.map((s, idx) => (
+          <div
+            key={idx}
+            className="grid grid-cols-[2rem_1fr_1fr_2rem] items-center gap-2"
+          >
+            <span className="text-center text-sm font-medium text-muted">
+              {idx + 1}
+            </span>
+            <input
+              type="number"
+              inputMode="decimal"
+              step="0.5"
+              defaultValue={s.weight}
+              onChange={(e) =>
+                onSetField(re.id, idx, "weight", parseFloat(e.target.value) || 0)
+              }
+              onBlur={() => onCommitSets(re.id, re.sets)}
+              className="w-full rounded-md border border-border bg-surface-2 px-2 py-2 text-center text-sm outline-none focus:border-primary"
+            />
+            <input
+              type="number"
+              inputMode="numeric"
+              step="1"
+              defaultValue={s.reps}
+              onChange={(e) =>
+                onSetField(re.id, idx, "reps", parseInt(e.target.value) || 0)
+              }
+              onBlur={() => onCommitSets(re.id, re.sets)}
+              className="w-full rounded-md border border-border bg-surface-2 px-2 py-2 text-center text-sm outline-none focus:border-primary"
+            />
+            <button
+              onClick={() => onRemoveSet(idx)}
+              disabled={re.sets.length <= 1}
+              className="flex items-center justify-center rounded-md p-1.5 text-muted hover:text-danger disabled:opacity-30"
+              aria-label="Satz entfernen"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        ))}
+        <button
+          onClick={onAddSet}
+          className="flex w-full items-center justify-center gap-1 rounded-md border border-dashed border-border py-1.5 text-xs text-muted hover:border-primary hover:text-primary"
+        >
+          <Plus className="size-3.5" /> Satz hinzufügen
+        </button>
+      </div>
+
+      {/* Pause pro Übung */}
+      <label className="mt-3 flex items-center justify-between gap-2">
+        <span className="text-[11px] uppercase tracking-wide text-muted">
+          Pause (s)
+        </span>
+        <input
+          type="number"
+          inputMode="numeric"
+          step="5"
+          defaultValue={re.targetRestSec}
+          onBlur={(e) => onUpdateRest(parseInt(e.target.value) || 0)}
+          className="w-24 rounded-md border border-border bg-surface-2 px-2 py-1.5 text-center text-sm outline-none focus:border-primary"
+        />
+      </label>
+    </li>
   );
 }
