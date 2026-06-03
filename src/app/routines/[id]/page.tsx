@@ -8,6 +8,7 @@ import { RoutineShareToggle } from "@/components/routine-share-toggle";
 import { Card } from "@/components/ui";
 import { loadCoachProfile } from "@/lib/coach-data";
 import { reviewRoutine } from "@/lib/coach-knowledge";
+import { parseRoutineSets } from "@/lib/routine-sets";
 
 export const dynamic = "force-dynamic";
 
@@ -123,9 +124,7 @@ export default async function RoutineDetail({
           id: re.id,
           name: re.exercise.nameDe,
           muscleName: re.exercise.primaryMuscle.nameDe,
-          targetSets: re.targetSets,
-          targetReps: re.targetReps,
-          targetWeight: re.targetWeight,
+          sets: parseRoutineSets(re),
           targetRestSec: re.targetRestSec,
         }))}
         pickerItems={pickerItems}

@@ -14,6 +14,7 @@ import {
   requireUser,
 } from "@/lib/auth";
 import { provisionTaxonomy, provisionUserContent } from "@/lib/provision";
+import { parseRoutineSets, type RoutineSet } from "@/lib/routine-sets";
 import { getVersionInfo } from "@/lib/version";
 import { isUpdateActive } from "@/lib/update-status";
 import { readUpdateStatus, writeUpdateStatus } from "@/lib/update-status.server";
@@ -257,13 +258,17 @@ export async function startWorkout(routineId?: string) {
           supersetGroup: re.supersetGroup,
         },
       });
-      for (let i = 0; i < re.targetSets; i++) {
+      // Individuelle bzw. gleichförmige Sätze aus der Vorlage übernehmen.
+      const planned = parseRoutineSets(re);
+      let setNo = 0;
+      for (const ps of planned) {
+        setNo += 1;
         await db.workoutSet.create({
           data: {
             workoutExerciseId: we.id,
-            setNumber: i + 1,
-            reps: re.targetReps,
-            weight: re.targetWeight, // geplantes Gewicht direkt vorbelegen
+            setNumber: setNo,
+            reps: ps.reps,
+            weight: ps.weight,
             restSec: re.targetRestSec,
           },
         });
@@ -422,16 +427,25 @@ export async function applyWorkoutToRoutine(workoutId: string) {
     );
     if (working.length === 0) continue;
 
+    // Jeden Satz einzeln übernehmen (individuelle Werte bleiben erhalten).
+    const perSet: RoutineSet[] = working.map((s) => ({
+      reps: s.reps,
+      weight: s.weight,
+    }));
     const repCounts = new Map<number, number>();
     for (const s of working) repCounts.set(s.reps, (repCounts.get(s.reps) ?? 0) + 1);
     const targetReps =
       [...repCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
       working[0].reps;
-    const targetWeight = Math.max(0, ...working.map((s) => s.weight));
 
     await db.routineExercise.updateMany({
       where: { id: re.id, routine: { userId: user.id } },
-      data: { targetSets: working.length, targetReps, targetWeight },
+      data: {
+        setsJson: JSON.stringify(perSet),
+        targetSets: perSet.length,
+        targetReps,
+        targetWeight: Math.max(0, ...perSet.map((s) => s.weight)),
+      },
     });
   }
 
@@ -583,6 +597,8 @@ export async function saveWorkoutAsRoutine(workoutId: string) {
       10;
     // Schwerstes bewegtes Gewicht als geplantes Arbeitsgewicht.
     const targetWeight = Math.max(0, ...used.map((s) => s.weight));
+    // Jeden Satz einzeln festhalten.
+    const perSet = used.map((s) => ({ reps: s.reps, weight: s.weight }));
 
     await db.routineExercise.create({
       data: {
@@ -592,6 +608,7 @@ export async function saveWorkoutAsRoutine(workoutId: string) {
         targetSets: used.length,
         targetReps,
         targetWeight,
+        setsJson: JSON.stringify(perSet),
         targetRestSec: used[0].restSec || 90,
         supersetGroup: we.supersetGroup,
       },
@@ -803,4 +820,126 @@ export async function removeRoutineExercise(id: string, routineId: string) {
     where: { id, routine: { userId: user.id } },
   });
   revalidatePath(`/routines/${routineId}`);
+}
+
+// Individuelle Sätze einer Plan-Übung setzen (pro Satz Gewicht + Wdh).
+export async function updateRoutineExerciseSets(
+  id: string,
+  routineId: string,
+  sets: RoutineSet[],
+) {
+  const user = await requireUser();
+  const clean = sets.slice(0, 30).map((s) => ({
+    reps: Math.max(0, Math.round(Number(s.reps) || 0)),
+    weight: Math.max(0, Number(s.weight) || 0),
+  }));
+  if (clean.length === 0) clean.push({ reps: 0, weight: 0 });
+  await db.routineExercise.updateMany({
+    where: { id, routine: { userId: user.id } },
+    data: {
+      setsJson: JSON.stringify(clean),
+      targetSets: clean.length,
+      targetReps: clean[0].reps,
+      targetWeight: Math.max(0, ...clean.map((s) => s.weight)),
+    },
+  });
+  revalidatePath(`/routines/${routineId}`);
+}
+
+// Reihenfolge der Übungen speichern (nach Drag-and-drop).
+export async function reorderRoutineExercises(
+  routineId: string,
+  orderedIds: string[],
+) {
+  const user = await requireUser();
+  const routine = await db.routine.findFirst({
+    where: { id: routineId, userId: user.id },
+    select: { id: true },
+  });
+  if (!routine) return;
+  await Promise.all(
+    orderedIds.map((id, i) =>
+      db.routineExercise.updateMany({ where: { id, routineId }, data: { position: i } }),
+    ),
+  );
+  revalidatePath(`/routines/${routineId}`);
+}
+
+// Coach „verbessert" die Vorlage auf Basis der Trainingsregeln:
+// 1) Grundübungen nach vorn (mehrgelenkig zuerst, Reihenfolge sonst erhalten).
+// 2) Bei fehlendem Gegenspieler (nur Druck, kein Zug – oder umgekehrt) eine
+//    passende Grundübung aus dem Katalog ergänzen. Konservativ & nachvollziehbar.
+export async function improveRoutine(
+  routineId: string,
+): Promise<{ messages: string[] }> {
+  const user = await requireUser();
+  const routine = await db.routine.findFirst({
+    where: { id: routineId, userId: user.id },
+    include: {
+      exercises: {
+        orderBy: { position: "asc" },
+        include: { exercise: { select: { nameDe: true, mechanic: true, forceType: true } } },
+      },
+    },
+  });
+  if (!routine) return { messages: [] };
+
+  const messages: string[] = [];
+  const exs = routine.exercises;
+
+  // 1) Stabile Umsortierung: Grundübungen (compound) vor Isolation.
+  const compounds = exs.filter((e) => e.exercise.mechanic === "compound");
+  const isolation = exs.filter((e) => e.exercise.mechanic !== "compound");
+  const ordered = [...compounds, ...isolation];
+  const changedOrder = ordered.some((e, i) => e.id !== exs[i]?.id);
+  if (changedOrder) {
+    await Promise.all(
+      ordered.map((e, i) =>
+        db.routineExercise.updateMany({ where: { id: e.id, routineId }, data: { position: i } }),
+      ),
+    );
+    messages.push(
+      "Reihenfolge optimiert: Grundübungen nach vorn, Isolation danach – so trainierst du die großen Übungen ausgeruht.",
+    );
+  }
+
+  // 2) Fehlenden Gegenspieler ergänzen (nur wenn eine Seite ganz fehlt).
+  const pushSets = exs
+    .filter((e) => e.exercise.forceType === "push")
+    .reduce((s, e) => s + (e.targetSets || 0), 0);
+  const pullSets = exs
+    .filter((e) => e.exercise.forceType === "pull")
+    .reduce((s, e) => s + (e.targetSets || 0), 0);
+  const present = new Set(exs.map((e) => e.exerciseId));
+
+  const addBalancing = async (force: "push" | "pull", label: string) => {
+    const candidate = await db.exercise.findFirst({
+      where: {
+        userId: user.id,
+        mechanic: "compound",
+        forceType: force,
+        id: { notIn: [...present] },
+      },
+      orderBy: { nameDe: "asc" },
+      select: { id: true, nameDe: true },
+    });
+    if (!candidate) return;
+    const count = await db.routineExercise.count({ where: { routineId } });
+    await db.routineExercise.create({
+      data: { routineId, exerciseId: candidate.id, position: count, targetSets: 3, targetReps: 10 },
+    });
+    messages.push(
+      `${label}-Übung ergänzt: „${candidate.nameDe}". Druck und Zug im Gleichgewicht beugt Dysbalancen und Schulterproblemen vor.`,
+    );
+  };
+
+  if (pushSets >= 6 && pullSets === 0) await addBalancing("pull", "Zug");
+  else if (pullSets >= 6 && pushSets === 0) await addBalancing("push", "Druck");
+
+  if (messages.length === 0) {
+    messages.push("Schon gut aufgebaut – Reihenfolge und Balance passen. Nichts zu ändern.");
+  }
+
+  revalidatePath(`/routines/${routineId}`);
+  return { messages };
 }
