@@ -64,6 +64,15 @@ model Routine {
   isPreset    Boolean           @default(false)
   // Von Nutzer freigegebene, selbst erstellte Vorlage (Community). Nie für Presets.
   isPublic    Boolean           @default(false)
+  // Vorlagen-Metadaten (für Filter, Beschreibung & Coach-Empfehlung).
+  goal        String            @default("") // strength, hypertrophy, endurance, general
+  level       String            @default("") // beginner, intermediate, advanced
+  location    String            @default("") // gym, home, both
+  category    String            @default("") // Split-Typ, z. B. "Push/Pull/Legs", "Ganzkörper"
+  benefits    String            @default("") // Wofür ist der Plan gut / was wird trainiert
+  // Wurde diese Routine als Tag eines Coach-Programms erzeugt? Dann nicht in der
+  // normalen "Deine Pläne"-Liste anzeigen (erscheint in der Programm-Übersicht).
+  fromProgram Boolean           @default(false)
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   user        User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -73,6 +82,42 @@ model Routine {
 
   @@index([userId])
   @@index([isPublic])
+}
+
+// Ein mehrtägiges Coach-Programm: eine geordnete Folge von Trainingstagen, die
+// nacheinander absolviert werden. Wird beim Aktivieren aus einer kuratierten
+// Vorlage (program-data.ts) für den Nutzer instanziiert.
+model Program {
+  id          String       @id @default(cuid())
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  key         String // Schlüssel der kuratierten Vorlage (z. B. "ppl-6")
+  name        String
+  description String       @default("")
+  goal        String       @default("")
+  level       String       @default("")
+  location    String       @default("")
+  daysPerWeek Int          @default(3)
+  cursor      Int          @default(0) // Index des nächsten Tages
+  cycles      Int          @default(0) // abgeschlossene Durchläufe
+  active      Boolean      @default(true)
+  startedAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  days        ProgramDay[]
+
+  @@index([userId])
+}
+
+model ProgramDay {
+  id        String  @id @default(cuid())
+  program   Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+  programId String
+  position  Int     @default(0)
+  label     String // z. B. "Tag 1 – Push"
+  focus     String  @default("") // kurze Beschreibung des Tages
+  routineId String // verweist auf die für diesen Tag erzeugte Routine
+
+  @@index([programId])
 }
 
 model RoutineExercise {
@@ -169,6 +214,7 @@ model User {
   routines        Routine[]
   workouts        Workout[]
   personalRecords PersonalRecord[]
+  programs        Program[]
   settings        Settings?
 }
 

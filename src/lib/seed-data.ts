@@ -430,10 +430,74 @@ export const exercises: ExSeed[] = [
 
 // Fertige Vorlagen: [Übungsname (nameDe), Zielsätze, Zielwdh.]
 export type PresetEx = [string, number, number];
-export const presets: { name: string; description: string; exercises: PresetEx[] }[] = [
+export type PresetGoal = "strength" | "hypertrophy" | "endurance" | "general";
+export type PresetLevel = "beginner" | "intermediate" | "advanced";
+export type PresetLocation = "gym" | "home" | "both";
+
+export type Preset = {
+  name: string;
+  description: string;
+  goal: PresetGoal;
+  level: PresetLevel;
+  location: PresetLocation;
+  category: string; // Split-Typ
+  benefits: string; // Wofür ist der Plan gut / was wird trainiert
+  rest?: number; // Standard-Pause (s)
+  exercises: PresetEx[];
+};
+
+// Anerkannte Einzel-Trainings (Vorlagen) für verschiedene Ziele, Level und Orte.
+// Sets/Wdh nach sportwissenschaftlichen Richtwerten (Kraft 3–6, Hypertrophie
+// 8–12, Kraftausdauer 12–20). Reihenfolge: Grundübungen zuerst.
+export const presets: Preset[] = [
+  /* ---------------- Ganzkörper ---------------- */
+  {
+    name: "Ganzkörper Basis",
+    description: "Effizientes Komplett-Workout mit Grundübungen",
+    goal: "general",
+    level: "beginner",
+    location: "gym",
+    category: "Ganzkörper",
+    benefits:
+      "Trainiert den ganzen Körper in einer Einheit (Beine, Brust, Rücken, Schultern, Arme, Core). Ideal für 2–3 Einheiten pro Woche und perfekt zum Technik-Lernen als Einstieg.",
+    exercises: [
+      ["Kniebeugen (Langhantel)", 3, 8],
+      ["Bankdrücken (Langhantel)", 3, 8],
+      ["Langhantelrudern", 3, 8],
+      ["Schulterdrücken (Langhantel)", 3, 10],
+      ["Bizeps Curls (Kurzhantel)", 2, 12],
+      ["Plank", 3, 1],
+    ],
+  },
+  {
+    name: "Kraft-Ganzkörper 5×5",
+    description: "Schwere Grundübungen im 5×5-Schema",
+    goal: "strength",
+    level: "beginner",
+    location: "gym",
+    category: "Kraft (5×5)",
+    benefits:
+      "Maximaler Kraftaufbau über die großen Grundübungen (StrongLifts-Prinzip). 5 Sätze à 5 Wiederholungen mit progressiver Laststeigerung – baut eine starke Basis in Kniebeuge, Bankdrücken und Kreuzheben auf.",
+    rest: 180,
+    exercises: [
+      ["Kniebeugen (Langhantel)", 5, 5],
+      ["Bankdrücken (Langhantel)", 5, 5],
+      ["Langhantelrudern", 5, 5],
+      ["Schulterdrücken (Langhantel)", 3, 5],
+      ["Kreuzheben (Langhantel)", 1, 5],
+    ],
+  },
+
+  /* ---------------- Push / Pull / Legs ---------------- */
   {
     name: "Push Day",
     description: "Brust, Schultern, Trizeps",
+    goal: "hypertrophy",
+    level: "intermediate",
+    location: "gym",
+    category: "Push/Pull/Legs",
+    benefits:
+      "Alle Druck-Muskeln an einem Tag: Brust, vordere/seitliche Schulter und Trizeps. Teil des PPL-Splits für hohes wöchentliches Volumen bei guter Erholung.",
     exercises: [
       ["Bankdrücken (Langhantel)", 4, 8],
       ["Schrägbankdrücken (Kurzhantel)", 3, 10],
@@ -446,6 +510,12 @@ export const presets: { name: string; description: string; exercises: PresetEx[]
   {
     name: "Pull Day",
     description: "Rücken, Bizeps, hintere Schulter",
+    goal: "hypertrophy",
+    level: "intermediate",
+    location: "gym",
+    category: "Push/Pull/Legs",
+    benefits:
+      "Alle Zug-Muskeln: breiter Rücken (Lat), oberer Rücken, hintere Schulter und Bizeps. Sorgt im PPL für die wichtige Balance zum Push-Tag und eine gesunde Haltung.",
     exercises: [
       ["Klimmzüge (breit)", 4, 8],
       ["Langhantelrudern", 4, 10],
@@ -458,6 +528,12 @@ export const presets: { name: string; description: string; exercises: PresetEx[]
   {
     name: "Leg Day",
     description: "Beine komplett",
+    goal: "hypertrophy",
+    level: "intermediate",
+    location: "gym",
+    category: "Push/Pull/Legs",
+    benefits:
+      "Komplettes Beintraining: Quadrizeps, Beinbeuger, Gesäß und Waden. Die großen Beinübungen kurbeln zudem den Stoffwechsel und die Hormonausschüttung für den ganzen Körper an.",
     exercises: [
       ["Kniebeugen (Langhantel)", 4, 8],
       ["Rumänisches Kreuzheben", 3, 10],
@@ -466,9 +542,17 @@ export const presets: { name: string; description: string; exercises: PresetEx[]
       ["Wadenheben stehend", 4, 15],
     ],
   },
+
+  /* ---------------- Upper / Lower ---------------- */
   {
-    name: "Oberkörper",
+    name: "Oberkörper (Upper)",
     description: "Push & Pull kombiniert",
+    goal: "hypertrophy",
+    level: "intermediate",
+    location: "gym",
+    category: "Upper/Lower",
+    benefits:
+      "Gesamter Oberkörper an einem Tag – Brust, Rücken, Schultern und Arme im Gleichgewicht. Kern des Upper/Lower-Splits, ideal für 4 Trainingstage pro Woche.",
     exercises: [
       ["Bankdrücken (Langhantel)", 4, 8],
       ["Langhantelrudern", 4, 8],
@@ -479,8 +563,14 @@ export const presets: { name: string; description: string; exercises: PresetEx[]
     ],
   },
   {
-    name: "Unterkörper",
+    name: "Unterkörper (Lower)",
     description: "Beine & unterer Rücken",
+    goal: "hypertrophy",
+    level: "intermediate",
+    location: "gym",
+    category: "Upper/Lower",
+    benefits:
+      "Beine und hintere Kette: Quadrizeps, Beinbeuger, Gesäß, Waden und unterer Rücken. Komplettiert mit dem Oberkörper-Tag den ausgewogenen Upper/Lower-Split.",
     exercises: [
       ["Kniebeugen (Langhantel)", 4, 8],
       ["Rumänisches Kreuzheben", 4, 8],
@@ -489,16 +579,138 @@ export const presets: { name: string; description: string; exercises: PresetEx[]
       ["Wadenheben sitzend", 4, 15],
     ],
   },
+
+  /* ---------------- Bro-Split (fortgeschritten) ---------------- */
   {
-    name: "Ganzkörper",
-    description: "Effizientes Komplett-Workout",
+    name: "Brust & Trizeps",
+    description: "Fokus-Tag für Druckkraft",
+    goal: "hypertrophy",
+    level: "advanced",
+    location: "gym",
+    category: "Bro-Split",
+    benefits:
+      "Hohes Volumen für Brust und Trizeps an einem Tag (klassischer Bro-Split). Sinnvoll für Erfahrene, die einzelne Muskelgruppen gezielt ausreizen wollen.",
     exercises: [
-      ["Kniebeugen (Langhantel)", 3, 8],
-      ["Bankdrücken (Langhantel)", 3, 8],
-      ["Langhantelrudern", 3, 8],
-      ["Schulterdrücken (Langhantel)", 3, 10],
-      ["Bizeps Curls (Kurzhantel)", 2, 12],
+      ["Bankdrücken (Langhantel)", 4, 8],
+      ["Schrägbankdrücken (Kurzhantel)", 4, 10],
+      ["Butterfly (Maschine)", 3, 12],
+      ["Enges Bankdrücken", 3, 10],
+      ["Trizepsdrücken am Seil", 3, 12],
+      ["Überkopf-Trizepsstrecken (Kurzhantel)", 3, 12],
+    ],
+  },
+  {
+    name: "Rücken & Bizeps",
+    description: "Fokus-Tag für Zugkraft",
+    goal: "hypertrophy",
+    level: "advanced",
+    location: "gym",
+    category: "Bro-Split",
+    benefits:
+      "Maximales Volumen für Rücken und Bizeps. Breite, Dicke und Armbeuger gezielt aufbauen – gehört im Bro-Split zum Brust-Tag als Gegenspieler.",
+    exercises: [
+      ["Klimmzüge (breit)", 4, 8],
+      ["Langhantelrudern", 4, 10],
+      ["Kabelrudern sitzend", 3, 12],
+      ["Face Pulls", 3, 15],
+      ["Bizeps Curls (SZ-Stange)", 3, 10],
+      ["Hammer Curls (Kurzhantel)", 3, 12],
+    ],
+  },
+  {
+    name: "Schultern & Bauch",
+    description: "Runde Schultern & starker Core",
+    goal: "hypertrophy",
+    level: "advanced",
+    location: "gym",
+    category: "Bro-Split",
+    benefits:
+      "Alle drei Schulterköpfe plus Core. Baut breite, runde Schultern auf und stabilisiert mit gezieltem Bauchtraining den ganzen Rumpf.",
+    exercises: [
+      ["Schulterdrücken (Langhantel)", 4, 8],
+      ["Seitheben (Kurzhantel)", 4, 15],
+      ["Reverse Flys (Maschine)", 3, 15],
+      ["Aufrechtes Rudern (Langhantel)", 3, 12],
+      ["Beinheben hängend", 3, 12],
+      ["Plank", 3, 1],
+    ],
+  },
+
+  /* ---------------- Zuhause / Bodyweight ---------------- */
+  {
+    name: "Ganzkörper Zuhause",
+    description: "Komplett ohne Geräte",
+    goal: "general",
+    level: "beginner",
+    location: "home",
+    category: "Bodyweight",
+    benefits:
+      "Vollständiges Training nur mit dem eigenen Körpergewicht – kein Equipment nötig. Trainiert Beine, Brust, Rücken-Stabilität und Core. Perfekt für zuhause, im Urlaub oder als Einstieg.",
+    rest: 60,
+    exercises: [
+      ["Kniebeugen ohne Gewicht", 3, 20],
+      ["Liegestütze", 3, 12],
+      ["Ausfallschritte (Kurzhantel)", 3, 12],
+      ["Glute Bridge", 3, 15],
+      ["Superman", 3, 15],
+      ["Plank", 3, 1],
+    ],
+  },
+  {
+    name: "Oberkörper Zuhause (Kurzhantel)",
+    description: "Brust, Rücken, Schultern, Arme mit Kurzhanteln",
+    goal: "hypertrophy",
+    level: "beginner",
+    location: "home",
+    category: "Kurzhantel",
+    benefits:
+      "Effektives Oberkörper-Training für zuhause – es reichen ein Paar Kurzhanteln. Deckt alle großen Oberkörper-Muskeln ab und ist eine günstige Alternative zum Studio.",
+    rest: 75,
+    exercises: [
+      ["Bankdrücken (Kurzhantel)", 4, 10],
+      ["Kurzhantelrudern (einarmig)", 4, 10],
+      ["Schulterdrücken (Kurzhantel)", 3, 10],
+      ["Seitheben (Kurzhantel)", 3, 15],
+      ["Bizeps Curls (Kurzhantel)", 3, 12],
+      ["Überkopf-Trizepsstrecken (Kurzhantel)", 3, 12],
+    ],
+  },
+  {
+    name: "Core & Bauch",
+    description: "Starker, definierter Rumpf",
+    goal: "general",
+    level: "beginner",
+    location: "both",
+    category: "Core",
+    benefits:
+      "Gezieltes Rumpftraining für gerade und seitliche Bauchmuskeln sowie die Tiefenstabilität. Ein starker Core verbessert jede andere Übung und beugt Rückenschmerzen vor.",
+    rest: 45,
+    exercises: [
       ["Crunches", 3, 20],
+      ["Beinheben liegend", 3, 15],
+      ["Russian Twists", 3, 20],
+      ["Seitlicher Plank", 3, 1],
+      ["Plank", 3, 1],
+    ],
+  },
+
+  /* ---------------- Kraftausdauer / Kondition ---------------- */
+  {
+    name: "Stoffwechsel & Kondition",
+    description: "Fettverbrennung & Ausdauer im Zirkel",
+    goal: "endurance",
+    level: "intermediate",
+    location: "both",
+    category: "HIIT / Zirkel",
+    benefits:
+      "Ganzkörper-Zirkel mit hohem Puls: verbrennt viele Kalorien, verbessert die Kondition und die Kraftausdauer. Kurze Pausen, fließend von Übung zu Übung.",
+    rest: 40,
+    exercises: [
+      ["Kettlebell Swing", 4, 20],
+      ["Thruster", 4, 12],
+      ["Burpees", 4, 12],
+      ["Mountain Climbers", 4, 30],
+      ["Russian Twists", 4, 20],
     ],
   },
 ];

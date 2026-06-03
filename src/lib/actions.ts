@@ -15,6 +15,8 @@ import {
 } from "@/lib/auth";
 import { provisionTaxonomy, provisionUserContent } from "@/lib/provision";
 import { parseRoutineSets, type RoutineSet } from "@/lib/routine-sets";
+import { getProgram } from "@/lib/program-data";
+import { loadCoachProfile } from "@/lib/coach-data";
 import { getVersionInfo } from "@/lib/version";
 import { isUpdateActive } from "@/lib/update-status";
 import { readUpdateStatus, writeUpdateStatus } from "@/lib/update-status.server";
@@ -385,6 +387,22 @@ export async function finishWorkout(workoutId: string, name?: string) {
       ...(cleanName ? { name: cleanName } : {}),
     },
   });
+
+  // Gehört das Workout zu einem aktiven Coach-Programm? Dann Cursor weiterschalten
+  // und die Tages-Routine progressiv anpassen.
+  await advanceProgramAfterWorkout(
+    workout.routineId,
+    workout.exercises.map((we) => ({
+      exerciseId: we.exerciseId,
+      sets: we.sets.map((s) => ({
+        weight: s.weight,
+        reps: s.reps,
+        isCompleted: s.isCompleted,
+        setType: s.setType,
+      })),
+    })),
+    user.id,
+  );
 
   revalidatePath("/history");
   revalidatePath("/calendar");
@@ -968,5 +986,273 @@ export async function improveRoutine(
   }
 
   revalidatePath(`/routines/${routineId}`);
+  return { messages };
+}
+
+/* ---------------- Coach-Programme (mehrtägige Pläne) ---------------- */
+
+const PROGRAM_COLORS = [
+  "#6366f1",
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#a855f7",
+];
+
+// Aktiviert ein kuratiertes Programm: erzeugt pro Tag eine Routine und legt das
+// Programm mit seinen Tagen an. Ein zuvor aktives Programm wird ersetzt.
+export async function activateProgram(
+  key: string,
+): Promise<{ ok: boolean }> {
+  const user = await requireUser();
+  const seed = getProgram(key);
+  if (!seed) return { ok: false };
+
+  // Bisher aktive Programme + deren erzeugte Routinen entfernen.
+  const old = await db.program.findMany({
+    where: { userId: user.id, active: true },
+    include: { days: true },
+  });
+  for (const prog of old) {
+    const rids = prog.days.map((d) => d.routineId);
+    await db.program.delete({ where: { id: prog.id } });
+    if (rids.length) {
+      await db.routine.deleteMany({
+        where: { id: { in: rids }, userId: user.id },
+      });
+    }
+  }
+
+  // Name -> Übungs-ID des Nutzers.
+  const exs = await db.exercise.findMany({
+    where: { userId: user.id },
+    select: { id: true, nameDe: true },
+  });
+  const byName = new Map(exs.map((e) => [e.nameDe, e.id]));
+
+  const program = await db.program.create({
+    data: {
+      userId: user.id,
+      key: seed.key,
+      name: seed.name,
+      description: seed.description,
+      goal: seed.goal,
+      level: seed.level,
+      location: seed.location,
+      daysPerWeek: seed.daysPerWeek,
+    },
+  });
+
+  let pos = 0;
+  for (const day of seed.days) {
+    const routine = await db.routine.create({
+      data: {
+        name: `${seed.name} · ${day.label}`,
+        description: day.focus,
+        color: PROGRAM_COLORS[pos % PROGRAM_COLORS.length],
+        userId: user.id,
+        fromProgram: true,
+        goal: seed.goal,
+        level: seed.level,
+        location: seed.location,
+        category: seed.name,
+        benefits: day.focus,
+      },
+    });
+    let p2 = 0;
+    for (const [exName, sets, reps] of day.exercises) {
+      const exId = byName.get(exName);
+      if (!exId) continue;
+      await db.routineExercise.create({
+        data: {
+          routineId: routine.id,
+          exerciseId: exId,
+          position: p2++,
+          targetSets: sets,
+          targetReps: reps,
+          targetRestSec: seed.rest ?? 90,
+        },
+      });
+    }
+    await db.programDay.create({
+      data: {
+        programId: program.id,
+        position: pos++,
+        label: day.label,
+        focus: day.focus,
+        routineId: routine.id,
+      },
+    });
+  }
+
+  revalidatePath("/routines");
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// Beendet ein Programm und entfernt seine erzeugten Tages-Routinen. Bereits
+// absolvierte Workouts bleiben im Verlauf erhalten.
+export async function deactivateProgram(programId: string) {
+  const user = await requireUser();
+  const prog = await db.program.findFirst({
+    where: { id: programId, userId: user.id },
+    include: { days: true },
+  });
+  if (!prog) return;
+  const rids = prog.days.map((d) => d.routineId);
+  await db.program.delete({ where: { id: prog.id } });
+  if (rids.length) {
+    await db.routine.deleteMany({
+      where: { id: { in: rids }, userId: user.id },
+    });
+  }
+  revalidatePath("/routines");
+  revalidatePath("/");
+}
+
+// Nach einem Programm-Workout: Cursor auf den nächsten Tag setzen und die
+// Tages-Routine leicht progressiv anpassen (Double Progression).
+type FinishedExercise = {
+  exerciseId: string;
+  sets: { weight: number; reps: number; isCompleted: boolean; setType: string }[];
+};
+
+async function advanceProgramAfterWorkout(
+  routineId: string | null,
+  workoutExercises: FinishedExercise[],
+  userId: string,
+) {
+  if (!routineId) return;
+  const day = await db.programDay.findFirst({
+    where: { routineId, program: { userId, active: true } },
+    include: { program: { select: { id: true, cursor: true, cycles: true } } },
+  });
+  if (!day) return;
+
+  const len = await db.programDay.count({ where: { programId: day.programId } });
+  const wrapped = day.position + 1 >= len;
+  await db.program.update({
+    where: { id: day.programId },
+    data: {
+      cursor: (day.position + 1) % len,
+      cycles: wrapped ? day.program.cycles + 1 : day.program.cycles,
+    },
+  });
+
+  // Double Progression: wenn alle Arbeitssätze die Ziel-Wdh erreicht haben,
+  // Gewicht leicht erhöhen; sonst die erreichten Werte übernehmen.
+  const res = await db.routineExercise.findMany({
+    where: { routineId },
+    select: { id: true, exerciseId: true, targetReps: true },
+  });
+  for (const re of res) {
+    const we = workoutExercises.find((e) => e.exerciseId === re.exerciseId);
+    if (!we) continue;
+    const working = we.sets.filter(
+      (s) => s.isCompleted && s.setType !== "warmup" && (s.weight > 0 || s.reps > 0),
+    );
+    if (working.length === 0) continue;
+    const topWeight = Math.max(0, ...working.map((s) => s.weight));
+    const allHit = working.every((s) => s.reps >= re.targetReps);
+    const step = topWeight >= 40 ? 2.5 : 1.25;
+    const bump = allHit && topWeight > 0 ? step : 0;
+    const perSet: RoutineSet[] = working.map((s) => ({
+      reps: s.reps,
+      weight: s.weight > 0 ? s.weight + bump : 0,
+    }));
+    await db.routineExercise.update({
+      where: { id: re.id },
+      data: {
+        setsJson: JSON.stringify(perSet),
+        targetSets: perSet.length,
+        targetWeight: topWeight + bump,
+      },
+    });
+  }
+}
+
+// Coach bewertet das laufende Programm anhand der echten Trainingsdaten und gibt
+// wissenschaftlich begründete Hinweise (Konsistenz, Erholung, Deload).
+export async function reviewProgram(
+  programId: string,
+): Promise<{ messages: string[] }> {
+  const user = await requireUser();
+  const prog = await db.program.findFirst({
+    where: { id: programId, userId: user.id },
+    include: { days: true },
+  });
+  if (!prog) return { messages: [] };
+  const profile = await loadCoachProfile();
+
+  const routineIds = prog.days.map((d) => d.routineId);
+  const since = new Date(Date.now() - 28 * 24 * 60 * 60 * 1000);
+  const recent = await db.workout.findMany({
+    where: {
+      userId: user.id,
+      routineId: { in: routineIds },
+      finishedAt: { gte: since, not: null },
+    },
+    select: { finishedAt: true, totalVolume: true },
+    orderBy: { finishedAt: "asc" },
+  });
+
+  const messages: string[] = [];
+  const perWeek = recent.length / 4;
+  const target = prog.daysPerWeek;
+
+  if (recent.length === 0) {
+    messages.push(
+      "Noch keine abgeschlossenen Einheiten in diesem Plan. Starte mit dem nächsten Tag – nach ein paar Workouts bewerte ich deinen Fortschritt konkret.",
+    );
+  } else {
+    if (perWeek >= target - 0.25) {
+      messages.push(
+        `Top-Konsistenz: ~${perWeek.toFixed(1)} Einheiten/Woche – genau im Plan (${target}/Woche). Weiter so, Regelmäßigkeit ist der größte Hebel.`,
+      );
+    } else if (perWeek >= target * 0.6) {
+      messages.push(
+        `~${perWeek.toFixed(1)} Einheiten/Woche, angepeilt sind ${target}. Versuch, eine Einheit mehr unterzubringen – sonst stockt der Fortschritt.`,
+      );
+    } else {
+      messages.push(
+        `Nur ~${perWeek.toFixed(1)} Einheiten/Woche statt ${target}. Vielleicht ist ein Plan mit weniger Tagen realistischer – Dranbleiben schlägt das perfekte Programm.`,
+      );
+    }
+
+    // Volumen-Trend (erste vs. letzte Hälfte)
+    if (recent.length >= 4) {
+      const half = Math.floor(recent.length / 2);
+      const avg = (arr: typeof recent) =>
+        arr.reduce((s, w) => s + w.totalVolume, 0) / (arr.length || 1);
+      const first = avg(recent.slice(0, half));
+      const last = avg(recent.slice(half));
+      if (last > first * 1.05) {
+        messages.push(
+          "Dein Volumen steigt stetig – die progressive Belastung greift. Genau so soll es laufen.",
+        );
+      } else if (last < first * 0.95) {
+        messages.push(
+          "Dein Volumen geht zurück. Das kann auf Ermüdung hindeuten – plane eine leichtere Woche (Deload) mit ~60 % der Sätze ein.",
+        );
+      }
+    }
+  }
+
+  // Deload-Empfehlung nach mehreren Durchläufen
+  if (prog.cycles >= 4) {
+    messages.push(
+      `Du hast ${prog.cycles} Durchläufe geschafft. Nach 4–6 Wochen harter Arbeit ist eine Deload-Woche sinnvoll (leichtere Gewichte/weniger Sätze), damit Körper und Gelenke sich erholen.`,
+    );
+  }
+
+  // Niveau-Hinweis: passt der Split noch zum Level?
+  if (profile.experience === "advanced" && prog.daysPerWeek <= 3) {
+    messages.push(
+      "Als Erfahrener könntest du mit mehr Volumen (4–6 Tage) noch mehr herausholen – wenn die Erholung mitspielt.",
+    );
+  }
+
+  revalidatePath("/routines");
   return { messages };
 }

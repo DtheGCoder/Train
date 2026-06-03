@@ -1,9 +1,21 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
-import { ChevronRight, Plus, Sparkles, Globe, Users, Download } from "lucide-react";
+import { ChevronRight, Plus, Globe, Users, Download, Sparkles } from "lucide-react";
 import { PageHeader, Card, Input, Button, EmptyState } from "@/components/ui";
 import { createRoutine, cloneRoutine } from "@/lib/actions";
+import { loadCoachProfile } from "@/lib/coach-data";
+import {
+  recommendPrograms,
+  missingProfileForProgram,
+  getProgram,
+} from "@/lib/program-data";
+import { RoutineCatalog, type CatalogItem } from "@/components/routine-catalog";
+import {
+  CoachPlanSection,
+  type ActiveProgram,
+  type Recommendation,
+} from "@/components/coach-plan-section";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +99,7 @@ function CommunityList({ routines }: { routines: CommunityRow[] }) {
 
 export default async function RoutinesPage() {
   const user = await requireUser();
-  const [routines, communityRaw] = await Promise.all([
+  const [routines, communityRaw, profile, activeRaw] = await Promise.all([
     db.routine.findMany({
       where: { userId: user.id },
       orderBy: { updatedAt: "desc" },
@@ -103,10 +115,80 @@ export default async function RoutinesPage() {
         user: { select: { username: true } },
       },
     }),
+    loadCoachProfile(),
+    db.program.findFirst({
+      where: { userId: user.id, active: true },
+      include: { days: { orderBy: { position: "asc" } } },
+    }),
   ]);
 
-  const presets = routines.filter((r) => r.isPreset);
-  const custom = routines.filter((r) => !r.isPreset);
+  // Aktives Coach-Programm aufbereiten (mit Übungszahl je Tag).
+  let activeProgram: ActiveProgram | null = null;
+  if (activeRaw) {
+    const seed = getProgram(activeRaw.key);
+    const dayRoutines = await db.routine.findMany({
+      where: { id: { in: activeRaw.days.map((d) => d.routineId) } },
+      select: { id: true, _count: { select: { exercises: true } } },
+    });
+    const countMap = new Map(
+      dayRoutines.map((r) => [r.id, r._count.exercises]),
+    );
+    activeProgram = {
+      id: activeRaw.id,
+      name: activeRaw.name,
+      description: activeRaw.description,
+      goal: activeRaw.goal,
+      level: activeRaw.level,
+      daysPerWeek: activeRaw.daysPerWeek,
+      cursor: activeRaw.cursor,
+      cycles: activeRaw.cycles,
+      schedule: seed?.schedule ?? "",
+      benefits: seed?.benefits ?? "",
+      days: activeRaw.days.map((d) => ({
+        id: d.id,
+        label: d.label,
+        focus: d.focus,
+        routineId: d.routineId,
+        exerciseCount: countMap.get(d.routineId) ?? 0,
+      })),
+    };
+  }
+
+  const recommendations: Recommendation[] = recommendPrograms(profile)
+    .slice(0, 3)
+    .map((m) => ({
+      key: m.program.key,
+      name: m.program.name,
+      description: m.program.description,
+      goal: m.program.goal,
+      level: m.program.level,
+      location: m.program.location,
+      daysPerWeek: m.program.daysPerWeek,
+      schedule: m.program.schedule,
+      benefits: m.program.benefits,
+      reasons: m.reasons,
+      dayLabels: m.program.days.map((d) => d.label),
+    }));
+  const gaps = missingProfileForProgram(profile);
+
+  // Vorlagen-Katalog (Presets) für die filterbare Liste.
+  const presetItems: CatalogItem[] = routines
+    .filter((r) => r.isPreset)
+    .map((r) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      category: r.category,
+      goal: r.goal,
+      level: r.level,
+      location: r.location,
+      benefits: r.benefits,
+      exerciseCount: r._count.exercises,
+      color: r.color,
+    }));
+
+  // Eigene Pläne (ohne Presets und ohne Programm-Tages-Routinen).
+  const custom = routines.filter((r) => !r.isPreset && !r.fromProgram);
   const community: CommunityRow[] = communityRaw.map((r) => ({
     id: r.id,
     name: r.name,
@@ -117,34 +199,40 @@ export default async function RoutinesPage() {
   }));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <PageHeader
         title="Trainingspläne"
-        subtitle="Vorlagen & eigene Routinen für wiederkehrende Workouts"
+        subtitle="Coach-Pläne, Vorlagen & eigene Routinen für jedes Ziel"
       />
 
-      <Card>
-        <form action={createRoutine} className="flex gap-2">
-          <Input name="name" placeholder="Neuer Plan, z.B. Push Day" required />
-          <Button type="submit">
-            <Plus className="size-4" /> Anlegen
-          </Button>
-        </form>
-      </Card>
+      <CoachPlanSection
+        activeProgram={activeProgram}
+        recommendations={recommendations}
+        gaps={gaps}
+      />
 
-      <section className="space-y-2">
+      <section className="space-y-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-muted">
           <Sparkles className="size-4 text-primary" /> Vorlagen
+          <span className="font-normal">({presetItems.length})</span>
         </h2>
-        {presets.length === 0 ? (
+        {presetItems.length === 0 ? (
           <p className="text-sm text-muted">Keine Vorlagen vorhanden.</p>
         ) : (
-          <RoutineList routines={presets} />
+          <RoutineCatalog items={presetItems} />
         )}
       </section>
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-muted">Deine Pläne</h2>
+        <Card>
+          <form action={createRoutine} className="flex gap-2">
+            <Input name="name" placeholder="Neuer Plan, z.B. Push Day" required />
+            <Button type="submit">
+              <Plus className="size-4" /> Anlegen
+            </Button>
+          </form>
+        </Card>
         {custom.length === 0 ? (
           <EmptyState
             title="Noch keine eigenen Pläne"

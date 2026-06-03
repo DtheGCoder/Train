@@ -58,7 +58,6 @@ export async function provisionUserContent(db: Db, userId: string) {
     where: { userId },
     select: { id: true, nameDe: true },
   });
-  const isFresh = existingEx.length === 0;
 
   // Slug -> id-Maps aus den globalen Stammdaten.
   const muscleMap = new Map(
@@ -94,17 +93,41 @@ export async function provisionUserContent(db: Db, userId: string) {
     exByName.set(ex.nameDe, created.id);
   }
 
-  // Vorlagen-Routinen nur für neue Accounts anlegen (Auffüllen endet hier).
-  if (!isFresh) return;
+  // Vorlagen-Routinen idempotent sicherstellen — auch für bestehende Accounts,
+  // damit überarbeitete/neue Vorlagen bei allen Nutzern ankommen.
+  const presetMeta = (p: (typeof presets)[number]) => ({
+    description: p.description,
+    goal: p.goal,
+    level: p.level,
+    location: p.location,
+    category: p.category,
+    benefits: p.benefits,
+  });
 
-  // Vorlagen-Routinen als eigene Routinen des Nutzers anlegen.
+  const existingPresets = await db.routine.findMany({
+    where: { userId, isPreset: true },
+    select: { id: true, name: true },
+  });
+  const existingPresetNames = new Set(existingPresets.map((r) => r.name));
+  const presetNames = new Set(presets.map((p) => p.name));
+
   for (const preset of presets) {
+    if (existingPresetNames.has(preset.name)) {
+      // Metadaten/Beschreibung der vorhandenen Vorlage auffrischen (Übungen
+      // bleiben unangetastet, falls der Nutzer sie angepasst hat).
+      await db.routine.updateMany({
+        where: { userId, isPreset: true, name: preset.name },
+        data: presetMeta(preset),
+      });
+      continue;
+    }
+
     const routine = await db.routine.create({
       data: {
         name: preset.name,
-        description: preset.description,
         isPreset: true,
         userId,
+        ...presetMeta(preset),
       },
     });
     let position = 0;
@@ -121,9 +144,23 @@ export async function provisionUserContent(db: Db, userId: string) {
           position: position++,
           targetSets: sets,
           targetReps: reps,
-          targetRestSec: 90,
+          targetRestSec: preset.rest ?? 90,
         },
       });
+    }
+  }
+
+  // Veraltete Vorlagen aufräumen: nicht mehr im Katalog enthaltene Presets, die
+  // der Nutzer nie benutzt hat (keine Workouts), entfernen. Bearbeitete/benutzte
+  // bleiben sicherheitshalber erhalten.
+  for (const r of existingPresets) {
+    if (presetNames.has(r.name)) continue;
+    const used = await db.routine
+      .findFirst({ where: { id: r.id }, select: { workouts: { take: 1, select: { id: true } } } })
+      .then((x) => (x?.workouts.length ?? 0) > 0)
+      .catch(() => true);
+    if (!used) {
+      await db.routine.delete({ where: { id: r.id } }).catch(() => {});
     }
   }
 }
