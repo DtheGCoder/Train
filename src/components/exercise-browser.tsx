@@ -2,9 +2,11 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, ChevronRight, PlayCircle, Info, Plus } from "lucide-react";
-import { Input, Select, Badge, EmptyState } from "@/components/ui";
-import { hasExerciseDemo } from "@/lib/exercise-animation";
+import { Search, ChevronRight, PlayCircle, Info, Plus, X } from "lucide-react";
+import { Input, Select, Badge, EmptyState, Button } from "@/components/ui";
+import { hasExerciseDemo, getExerciseDemo } from "@/lib/exercise-animation";
+import { ExerciseAnimation } from "@/components/exercise-animation";
+import { mechanicLabels, categoryLabels } from "@/lib/labels";
 import { cn } from "@/lib/utils";
 
 export type ExerciseItem = {
@@ -18,6 +20,7 @@ export type ExerciseItem = {
   mechanic: string;
   category: string;
   isCustom: boolean;
+  instructions: string;
 };
 
 type Option = { slug: string; name: string };
@@ -38,6 +41,8 @@ export function ExerciseBrowser({
   const [query, setQuery] = useState("");
   const [muscle, setMuscle] = useState("");
   const [equip, setEquip] = useState("");
+  // Vorschau-Overlay: zeigt Details ohne wegzunavigieren → Suche & Scroll bleiben.
+  const [preview, setPreview] = useState<ExerciseItem | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -125,13 +130,14 @@ export function ExerciseBrowser({
                     {info}
                     <Plus className="ml-auto size-5 shrink-0 text-primary" />
                   </button>
-                  <Link
-                    href={`/exercises/${it.id}`}
+                  <button
+                    type="button"
+                    onClick={() => setPreview(it)}
                     aria-label={`${it.nameDe} – Details ansehen`}
                     className="flex size-12 shrink-0 items-center justify-center border-l border-border text-muted transition-colors hover:text-foreground active:text-foreground"
                   >
                     <Info className="size-5" />
-                  </Link>
+                  </button>
                 </li>
               );
             }
@@ -152,6 +158,70 @@ export function ExerciseBrowser({
       <p className={cn("text-center text-xs text-muted")}>
         {filtered.length} von {items.length}
       </p>
+
+      {/* Detail-Vorschau ohne Wegnavigieren (Suche/Scroll bleiben erhalten) */}
+      {preview && (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-background">
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+            <div className="min-w-0">
+              <h2 className="truncate font-semibold">{preview.nameDe}</h2>
+              <p className="truncate text-xs text-muted">{preview.nameEn}</p>
+            </div>
+            <button
+              onClick={() => setPreview(null)}
+              aria-label="Zurück zur Suche"
+              className="-mr-2 flex size-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-foreground active:bg-surface-2"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+
+          <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="flex flex-wrap gap-2">
+              <Badge className="bg-primary/15 text-primary">{preview.muscleName}</Badge>
+              {preview.equipmentName && <Badge>{preview.equipmentName}</Badge>}
+              <Badge>{mechanicLabels[preview.mechanic] ?? preview.mechanic}</Badge>
+              <Badge>{categoryLabels[preview.category] ?? preview.category}</Badge>
+            </div>
+
+            {(() => {
+              const demo = getExerciseDemo(preview.nameEn);
+              return demo ? <ExerciseAnimation frames={demo.frames} /> : null;
+            })()}
+
+            {preview.instructions && (
+              <div className="rounded-xl border border-border bg-surface p-4">
+                <h3 className="mb-1 text-sm font-semibold">Ausführung</h3>
+                <p className="text-sm leading-relaxed text-muted">
+                  {preview.instructions}
+                </p>
+              </div>
+            )}
+
+            <Link
+              href={`/exercises/${preview.id}`}
+              className="block text-center text-sm font-medium text-primary hover:underline"
+            >
+              Volle Detailseite öffnen →
+            </Link>
+          </div>
+
+          {selectable && (
+            <div className="border-t border-border px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
+              <Button
+                className="w-full"
+                onClick={() => {
+                  const it = preview;
+                  setPreview(null);
+                  onPick?.(it);
+                }}
+              >
+                <Plus className="size-4" /> Zum Workout hinzufügen
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

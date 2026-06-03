@@ -18,6 +18,7 @@ type REx = {
   muscleName: string;
   targetSets: number;
   targetReps: number;
+  targetWeight: number;
   targetRestSec: number;
 };
 
@@ -87,7 +88,7 @@ export function RoutineEditor({
                   <Trash2 className="size-4" />
                 </button>
               </div>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <Field
                   label="Sätze"
                   defaultValue={re.targetSets}
@@ -103,6 +104,16 @@ export function RoutineEditor({
                   onCommit={(v) =>
                     startTransition(() =>
                       updateRoutineExercise(re.id, routineId, { targetReps: v }),
+                    )
+                  }
+                />
+                <Field
+                  label="Gewicht (kg)"
+                  defaultValue={re.targetWeight}
+                  float
+                  onCommit={(v) =>
+                    startTransition(() =>
+                      updateRoutineExercise(re.id, routineId, { targetWeight: v }),
                     )
                   }
                 />
@@ -164,10 +175,12 @@ function Field({
   label,
   defaultValue,
   onCommit,
+  float = false,
 }: {
   label: string;
   defaultValue: number;
   onCommit: (v: number) => void;
+  float?: boolean;
 }) {
   return (
     <label className="block">
@@ -176,9 +189,12 @@ function Field({
       </span>
       <input
         type="number"
-        inputMode="numeric"
+        inputMode={float ? "decimal" : "numeric"}
+        step={float ? "0.5" : "1"}
         defaultValue={defaultValue}
-        onBlur={(e) => onCommit(parseInt(e.target.value) || 0)}
+        onBlur={(e) =>
+          onCommit((float ? parseFloat(e.target.value) : parseInt(e.target.value)) || 0)
+        }
         className="w-full rounded-md border border-border bg-surface-2 px-2 py-2 text-center text-sm outline-none focus:border-primary"
       />
     </label>

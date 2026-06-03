@@ -263,6 +263,7 @@ export async function startWorkout(routineId?: string) {
             workoutExerciseId: we.id,
             setNumber: i + 1,
             reps: re.targetReps,
+            weight: re.targetWeight, // geplantes Gewicht direkt vorbelegen
             restSec: re.targetRestSec,
           },
         });
@@ -385,6 +386,57 @@ export async function finishWorkout(workoutId: string, name?: string) {
   revalidatePath("/");
   // Bewusst KEIN redirect: der Client zeigt erst die Abschluss-Übersicht
   // (inkl. Coach-Fazit) und navigiert selbst, wenn der Nutzer weiterklickt.
+}
+
+// Übernimmt die tatsächlich erreichten Werte eines Plan-Workouts zurück in die
+// Vorlage: je Übung Sätze, repräsentative Wdh und schwerstes Gewicht. Nur
+// Übungen, die in der Vorlage existieren, werden aktualisiert.
+export async function applyWorkoutToRoutine(workoutId: string) {
+  const user = await requireUser();
+  const workout = await db.workout.findFirst({
+    where: { id: workoutId, userId: user.id },
+    select: {
+      routineId: true,
+      exercises: {
+        select: {
+          exerciseId: true,
+          sets: {
+            select: { weight: true, reps: true, isCompleted: true, setType: true },
+          },
+        },
+      },
+    },
+  });
+  if (!workout?.routineId) return;
+
+  const routineExercises = await db.routineExercise.findMany({
+    where: { routineId: workout.routineId, routine: { userId: user.id } },
+    select: { id: true, exerciseId: true },
+  });
+
+  for (const re of routineExercises) {
+    const we = workout.exercises.find((e) => e.exerciseId === re.exerciseId);
+    if (!we) continue;
+    const working = we.sets.filter(
+      (s) => s.isCompleted && s.setType !== "warmup" && (s.weight > 0 || s.reps > 0),
+    );
+    if (working.length === 0) continue;
+
+    const repCounts = new Map<number, number>();
+    for (const s of working) repCounts.set(s.reps, (repCounts.get(s.reps) ?? 0) + 1);
+    const targetReps =
+      [...repCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ??
+      working[0].reps;
+    const targetWeight = Math.max(0, ...working.map((s) => s.weight));
+
+    await db.routineExercise.updateMany({
+      where: { id: re.id, routine: { userId: user.id } },
+      data: { targetSets: working.length, targetReps, targetWeight },
+    });
+  }
+
+  revalidatePath(`/routines/${workout.routineId}`);
+  revalidatePath("/routines");
 }
 
 export async function discardWorkout(workoutId: string) {
@@ -529,6 +581,8 @@ export async function saveWorkoutAsRoutine(workoutId: string) {
       [...repCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ||
       used[0].reps ||
       10;
+    // Schwerstes bewegtes Gewicht als geplantes Arbeitsgewicht.
+    const targetWeight = Math.max(0, ...used.map((s) => s.weight));
 
     await db.routineExercise.create({
       data: {
@@ -537,6 +591,7 @@ export async function saveWorkoutAsRoutine(workoutId: string) {
         position: we.position,
         targetSets: used.length,
         targetReps,
+        targetWeight,
         targetRestSec: used[0].restSec || 90,
         supersetGroup: we.supersetGroup,
       },
@@ -727,7 +782,12 @@ export async function addRoutineExercise(
 export async function updateRoutineExercise(
   id: string,
   routineId: string,
-  data: { targetSets?: number; targetReps?: number; targetRestSec?: number },
+  data: {
+    targetSets?: number;
+    targetReps?: number;
+    targetWeight?: number;
+    targetRestSec?: number;
+  },
 ) {
   const user = await requireUser();
   await db.routineExercise.updateMany({

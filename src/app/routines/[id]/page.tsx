@@ -68,6 +68,7 @@ export default async function RoutineDetail({
     mechanic: e.mechanic,
     category: e.category,
     isCustom: e.isCustom,
+    instructions: e.instructions,
   }));
 
   return (
@@ -124,6 +125,7 @@ export default async function RoutineDetail({
           muscleName: re.exercise.primaryMuscle.nameDe,
           targetSets: re.targetSets,
           targetReps: re.targetReps,
+          targetWeight: re.targetWeight,
           targetRestSec: re.targetRestSec,
         }))}
         pickerItems={pickerItems}

@@ -124,12 +124,14 @@ export default async function WorkoutPage({
     mechanic: e.mechanic,
     category: e.category,
     isCustom: e.isCustom,
+    instructions: e.instructions,
   }));
 
   const initial = {
     id: workout.id,
     name: workout.name,
     startedAt: workout.startedAt.toISOString(),
+    routineId: workout.routineId ?? null,
     exercises: workout.exercises.map((we) => ({
       id: we.id,
       exerciseId: we.exerciseId,

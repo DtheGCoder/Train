@@ -62,6 +62,7 @@ import {
   addExerciseToWorkout,
   removeWorkoutExercise,
   finishWorkout,
+  applyWorkoutToRoutine,
   discardWorkout,
 } from "@/lib/actions";
 
@@ -87,6 +88,7 @@ type Initial = {
   id: string;
   name: string;
   startedAt: string;
+  routineId: string | null;
   exercises: ExState[];
 };
 
@@ -487,11 +489,15 @@ export function WorkoutSession({
     // Übersicht wäre weg. Gespeichert wird erst beim Klick auf „Zum Verlauf".
   };
 
-  const handleGoToHistory = (name: string) => {
+  const handleGoToHistory = (name: string, applyToRoutine: boolean) => {
     if (finishSaving) return;
     setFinishSaving(true);
     startTransition(async () => {
       await finishWorkout(initial.id, name);
+      // Auf Wunsch die erreichten Werte zurück in die Vorlage übernehmen.
+      if (applyToRoutine && initial.routineId) {
+        await applyWorkoutToRoutine(initial.id);
+      }
       router.push(`/history/${initial.id}`);
     });
   };
@@ -559,6 +565,7 @@ export function WorkoutSession({
           summary={finishSummary}
           status={finishStatus}
           defaultName={initial.name}
+          fromRoutine={initial.routineId !== null}
           saving={finishSaving}
           onContinue={handleGoToHistory}
         />
@@ -985,6 +992,7 @@ function FinishOverlay({
   summary,
   status,
   defaultName,
+  fromRoutine,
   saving,
   onContinue,
 }: {
@@ -994,10 +1002,12 @@ function FinishOverlay({
   summary: WorkoutSummary | null;
   status: Record<string, MuscleStatus>;
   defaultName: string;
+  fromRoutine: boolean;
   saving: boolean;
-  onContinue: (name: string) => void;
+  onContinue: (name: string, applyToRoutine: boolean) => void;
 }) {
   const [name, setName] = useState(defaultName);
+  const [applyToRoutine, setApplyToRoutine] = useState(true);
   const pieces = useMemo(() => {
     const colors = [
       "#6366f1",
@@ -1129,11 +1139,30 @@ function FinishOverlay({
             </div>
           )}
 
+          {/* Neue Werte zurück in die Vorlage übernehmen (nur bei Plan-Workout) */}
+          {fromRoutine && (
+            <label className="mt-5 flex cursor-pointer items-start gap-2.5 rounded-xl border border-border bg-surface p-3 text-left">
+              <input
+                type="checkbox"
+                checked={applyToRoutine}
+                onChange={(e) => setApplyToRoutine(e.target.checked)}
+                className="mt-0.5 size-4 shrink-0 accent-primary"
+              />
+              <span className="text-sm">
+                <span className="font-medium">Neue Werte in die Vorlage übernehmen</span>
+                <span className="mt-0.5 block text-xs text-muted">
+                  Aktualisiert Sätze, Wiederholungen und Gewicht im Plan mit dem,
+                  was du heute geschafft hast.
+                </span>
+              </span>
+            </label>
+          )}
+
           {/* Weiter – der Nutzer klickt selbst weiter (nichts verschwindet
               von allein). Erst hier wird gespeichert. */}
           <button
             type="button"
-            onClick={() => onContinue(name)}
+            onClick={() => onContinue(name, applyToRoutine)}
             disabled={saving}
             className="mt-6 inline-flex min-h-12 w-full select-none items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:opacity-90 active:opacity-80 disabled:opacity-60"
           >

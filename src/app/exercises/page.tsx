@@ -29,6 +29,7 @@ export default async function ExercisesPage() {
     mechanic: e.mechanic,
     category: e.category,
     isCustom: e.isCustom,
+    instructions: e.instructions,
   }));
 
   return (

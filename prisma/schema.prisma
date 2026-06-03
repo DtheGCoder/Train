@@ -84,6 +84,7 @@ model RoutineExercise {
   position      Int      @default(0)
   targetSets    Int      @default(3)
   targetReps    Int      @default(10)
+  targetWeight  Float    @default(0) // geplantes Arbeitsgewicht (kg); 0 = offen
   targetRestSec Int      @default(90)
   notes         String   @default("")
   supersetGroup Int? // Übungen mit gleicher Gruppe = Supersatz
