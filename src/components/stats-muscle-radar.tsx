@@ -50,9 +50,16 @@ function fmt(v: number): string {
   return Math.round(v).toLocaleString("de-DE");
 }
 
-export function MuscleGroupRadar({ data }: { data: RadarPoint[] }) {
+export function MuscleGroupRadar({
+  data,
+  hideRange = false,
+}: {
+  data: RadarPoint[];
+  // Zeitraum-Auswahl ausblenden (z. B. für ein einzelnes Workout) → „Gesamt".
+  hideRange?: boolean;
+}) {
   const [metric, setMetric] = useState<Metric>("reps");
-  const [range, setRange] = useState<number>(7);
+  const [range, setRange] = useState<number>(hideRange ? 0 : 7);
   // „Jetzt" einmal beim Mount festhalten (kein Date.now() im Render).
   const [now] = useState(() => Date.now());
 
@@ -114,21 +121,23 @@ export function MuscleGroupRadar({ data }: { data: RadarPoint[] }) {
       {/* Kopf: Titel + Zeitraum */}
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-xl font-bold">Muskel Gruppen</h2>
-        <div className="relative">
-          <select
-            value={range}
-            onChange={(e) => setRange(Number(e.target.value))}
-            className="appearance-none rounded-full bg-surface-2 py-2 pl-4 pr-9 text-sm font-medium text-foreground outline-none focus:ring-1 focus:ring-primary"
-            aria-label="Zeitraum"
-          >
-            {RANGES.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
-        </div>
+        {!hideRange && (
+          <div className="relative">
+            <select
+              value={range}
+              onChange={(e) => setRange(Number(e.target.value))}
+              className="appearance-none rounded-full bg-surface-2 py-2 pl-4 pr-9 text-sm font-medium text-foreground outline-none focus:ring-1 focus:ring-primary"
+              aria-label="Zeitraum"
+            >
+              {RANGES.map((r) => (
+                <option key={r.value} value={r.value}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+          </div>
+        )}
       </div>
 
       {/* Umschalter: Wdh. / Sätze / Volumen */}

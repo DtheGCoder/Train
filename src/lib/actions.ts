@@ -351,7 +351,7 @@ export async function deleteSet(setId: string) {
   });
 }
 
-export async function finishWorkout(workoutId: string) {
+export async function finishWorkout(workoutId: string, name?: string) {
   const user = await requireUser();
   const workout = await db.workout.findFirst({
     where: { id: workoutId, userId: user.id },
@@ -368,12 +368,20 @@ export async function finishWorkout(workoutId: string) {
     await updatePRsForExercise(we.exerciseId, user.id);
   }
 
+  // Optionaler, vom Nutzer vergebener Name (sonst bleibt der bisherige).
+  const cleanName = name?.trim().slice(0, 80);
+
   await db.workout.update({
     where: { id: workoutId },
-    data: { finishedAt: new Date(), totalVolume },
+    data: {
+      finishedAt: new Date(),
+      totalVolume,
+      ...(cleanName ? { name: cleanName } : {}),
+    },
   });
 
   revalidatePath("/history");
+  revalidatePath("/calendar");
   revalidatePath("/");
   // Bewusst KEIN redirect: der Client zeigt erst die Abschluss-Übersicht
   // (inkl. Coach-Fazit) und navigiert selbst, wenn der Nutzer weiterklickt.

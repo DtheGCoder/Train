@@ -7,10 +7,31 @@ import { Card, Button } from "@/components/ui";
 import { setTypeShort } from "@/lib/labels";
 import { formatDuration, epley1RM } from "@/lib/utils";
 import { saveWorkoutAsRoutine } from "@/lib/actions";
+import { MuscleQualityMap, muscleQuality } from "@/components/muscle-map";
+import { MuscleGroupRadar, type RadarPoint } from "@/components/stats-muscle-radar";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
 
 export const dynamic = "force-dynamic";
+
+// Spezifische Muskeln → 6 Hauptgruppen (für das Radar dieses Workouts).
+const MUSCLE_GROUP: Record<string, string> = {
+  chest: "Brust",
+  back: "Rückenmuskulatur",
+  lats: "Rückenmuskulatur",
+  traps: "Rückenmuskulatur",
+  shoulders: "Schultern",
+  biceps: "Arme",
+  triceps: "Arme",
+  forearms: "Arme",
+  quads: "Beine",
+  hamstrings: "Beine",
+  glutes: "Beine",
+  calves: "Beine",
+  abs: "Rumpf",
+  obliques: "Rumpf",
+  lowerback: "Rumpf",
+};
 
 export default async function WorkoutDetail({
   params,
@@ -40,6 +61,38 @@ export default async function WorkoutDetail({
     (sum, e) => sum + e.sets.filter((s) => s.isCompleted).length,
     0,
   );
+
+  // Trainierte Muskeln (Qualität rot/gelb/grün) + Radar dieses Workouts.
+  const day = format(workout.startedAt, "yyyy-MM-dd");
+  const setsByMuscle: Record<string, number> = {};
+  const radarMap = new Map<
+    string,
+    { reps: number; sets: number; volume: number }
+  >();
+  for (const we of workout.exercises) {
+    const working = we.sets.filter(
+      (s) => s.isCompleted && s.setType !== "warmup",
+    );
+    if (working.length === 0) continue;
+    const slug = we.exercise.primaryMuscle.slug;
+    setsByMuscle[slug] = (setsByMuscle[slug] ?? 0) + working.length;
+    const group = MUSCLE_GROUP[slug];
+    if (group) {
+      const cur = radarMap.get(group) ?? { reps: 0, sets: 0, volume: 0 };
+      for (const s of working) {
+        cur.reps += s.reps;
+        cur.sets += 1;
+        cur.volume += s.weight * s.reps;
+      }
+      radarMap.set(group, cur);
+    }
+  }
+  const status = muscleQuality(setsByMuscle);
+  const radarData: RadarPoint[] = [...radarMap.entries()].map(([group, v]) => ({
+    date: day,
+    group,
+    ...v,
+  }));
 
   return (
     <div className="space-y-5">
@@ -83,6 +136,17 @@ export default async function WorkoutDetail({
           <p className="text-xs text-muted">Sätze</p>
         </Card>
       </div>
+
+      {/* Trainierte Muskeln dieses Workouts (rot/gelb/grün) */}
+      {Object.keys(status).length > 0 && (
+        <Card>
+          <h2 className="mb-2 text-sm font-semibold">Trainierte Muskeln</h2>
+          <MuscleQualityMap status={status} className="mx-auto max-w-md" />
+        </Card>
+      )}
+
+      {/* Muskelgruppen-Verteilung dieses Workouts */}
+      {radarData.length > 0 && <MuscleGroupRadar data={radarData} hideRange />}
 
       <div className="space-y-3">
         {workout.exercises.map((we) => (

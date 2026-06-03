@@ -28,6 +28,11 @@ import { Button } from "@/components/ui";
 import { ExerciseBrowser, type ExerciseItem } from "@/components/exercise-browser";
 import { RestTimer } from "@/components/rest-timer";
 import { CoachCard, type CoachReaction } from "@/components/coach-card";
+import {
+  MuscleQualityMap,
+  muscleQuality,
+  type MuscleStatus,
+} from "@/components/muscle-map";
 import { setTypeLabels, setTypeShort } from "@/lib/labels";
 import { formatDuration, cn } from "@/lib/utils";
 import {
@@ -72,6 +77,7 @@ type ExState = {
   exerciseId: string;
   name: string;
   muscleName: string;
+  muscleSlug: string;
   sets: SetState[];
 };
 type Initial = {
@@ -135,6 +141,10 @@ export function WorkoutSession({
   // Übersicht offen, statt durch das Speichern sofort weggeleitet zu werden.
   const [finishSummary, setFinishSummary] = useState<WorkoutSummary | null>(null);
   const [finishSaving, setFinishSaving] = useState(false);
+  // Trainierte Muskeln + Qualität (rot/gelb/grün) – Snapshot beim Beenden.
+  const [finishStatus, setFinishStatus] = useState<Record<string, MuscleStatus>>(
+    {},
+  );
   // Trainingsdauer wird im Moment des Beendens eingefroren (läuft danach NICHT
   // weiter, während die Übersicht offen ist).
   const [finishedElapsed, setFinishedElapsed] = useState<number | null>(null);
@@ -398,6 +408,7 @@ export function WorkoutSession({
           exerciseId: created.exerciseId,
           name: item.nameDe,
           muscleName: item.muscleName,
+          muscleSlug: item.muscleSlug,
           sets: created.sets.map((s) => ({
             id: s.id,
             setNumber: s.setNumber,
@@ -456,17 +467,27 @@ export function WorkoutSession({
         coach.profile,
       ),
     );
+
+    // Trainierte Muskeln (Primärmuskel je Übung) nach harten Sätzen einfärben.
+    const setsByMuscle: Record<string, number> = {};
+    for (const ex of exercises) {
+      const done = workingSetsOf(ex).filter((s) => s.isCompleted).length;
+      if (done > 0)
+        setsByMuscle[ex.muscleSlug] = (setsByMuscle[ex.muscleSlug] ?? 0) + done;
+    }
+    setFinishStatus(muscleQuality(setsByMuscle));
+
     setIsFinishing(true);
     // BEWUSST hier noch NICHT speichern: finishWorkout setzt finishedAt, was
     // die Workout-Seite serverseitig sofort auf /history umleiten würde – die
     // Übersicht wäre weg. Gespeichert wird erst beim Klick auf „Zum Verlauf".
   };
 
-  const handleGoToHistory = () => {
+  const handleGoToHistory = (name: string) => {
     if (finishSaving) return;
     setFinishSaving(true);
     startTransition(async () => {
-      await finishWorkout(initial.id);
+      await finishWorkout(initial.id, name);
       router.push(`/history/${initial.id}`);
     });
   };
@@ -520,6 +541,8 @@ export function WorkoutSession({
           volume={stats.volume}
           sets={stats.completedSets}
           summary={finishSummary}
+          status={finishStatus}
+          defaultName={initial.name}
           saving={finishSaving}
           onContinue={handleGoToHistory}
         />
@@ -930,6 +953,8 @@ function FinishOverlay({
   volume,
   sets,
   summary,
+  status,
+  defaultName,
   saving,
   onContinue,
 }: {
@@ -937,9 +962,12 @@ function FinishOverlay({
   volume: number;
   sets: number;
   summary: WorkoutSummary | null;
+  status: Record<string, MuscleStatus>;
+  defaultName: string;
   saving: boolean;
-  onContinue: () => void;
+  onContinue: (name: string) => void;
 }) {
+  const [name, setName] = useState(defaultName);
   const pieces = useMemo(() => {
     const colors = [
       "#6366f1",
@@ -1001,6 +1029,31 @@ function FinishOverlay({
           <p className="text-2xl font-bold">Geschafft! 💪</p>
           <p className="mt-1 text-sm text-muted">Workout abgeschlossen</p>
 
+          {/* Workout benennen */}
+          <div className="mt-5 text-left">
+            <label className="mb-1 block text-xs font-medium text-muted">
+              Workout benennen
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={80}
+              placeholder="z. B. Push Day, Beine schwer …"
+              className="h-11 w-full rounded-lg border border-border bg-surface-2 px-3 text-base outline-none focus:border-primary"
+            />
+          </div>
+
+          {/* Trainierte Muskeln (rot/gelb/grün) */}
+          {Object.keys(status).length > 0 && (
+            <div className="mt-5 rounded-xl border border-border bg-surface p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
+                Trainierte Muskeln
+              </p>
+              <MuscleQualityMap status={status} className="mx-auto max-w-xs" />
+            </div>
+          )}
+
           <div className="mt-5 flex items-center justify-center gap-6 text-sm">
             <div>
               <p className="text-lg font-bold tabular-nums">{durationLabel}</p>
@@ -1050,7 +1103,7 @@ function FinishOverlay({
               von allein). Erst hier wird gespeichert. */}
           <button
             type="button"
-            onClick={onContinue}
+            onClick={() => onContinue(name)}
             disabled={saving}
             className="mt-6 inline-flex min-h-12 w-full select-none items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:opacity-90 active:opacity-80 disabled:opacity-60"
           >
@@ -1060,7 +1113,7 @@ function FinishOverlay({
               </>
             ) : (
               <>
-                Zum Verlauf <ArrowRight className="size-4" />
+                Speichern & zum Verlauf <ArrowRight className="size-4" />
               </>
             )}
           </button>
