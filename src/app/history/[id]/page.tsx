@@ -8,7 +8,9 @@ import { setTypeShort } from "@/lib/labels";
 import { formatDuration, epley1RM } from "@/lib/utils";
 import { saveWorkoutAsRoutine } from "@/lib/actions";
 import { ACHIEVEMENTS } from "@/lib/achievements";
+import { titleById } from "@/lib/titles";
 import { AchievementPopup } from "@/components/achievement-popup";
+import { TitleBadge } from "@/components/title-badge";
 import { MuscleQualityMap, muscleQuality } from "@/components/muscle-map";
 import { MuscleGroupRadar, type RadarPoint } from "@/components/stats-muscle-radar";
 import { format } from "date-fns";
@@ -76,6 +78,18 @@ export default async function WorkoutDetail({
     .map((aid) => ACHIEVEMENTS.find((a) => a.id === aid))
     .filter((a): a is (typeof ACHIEVEMENTS)[number] => !!a);
 
+  // Durch dieses Workout neu freigeschaltete Titel.
+  let unlockedTitleIds: string[] = [];
+  try {
+    const v = JSON.parse(workout.unlockedTitlesJson);
+    if (Array.isArray(v)) unlockedTitleIds = v as string[];
+  } catch {
+    unlockedTitleIds = [];
+  }
+  const unlockedTitles = unlockedTitleIds
+    .map((tid) => titleById(tid))
+    .filter((t): t is NonNullable<ReturnType<typeof titleById>> => !!t);
+
   // Trainierte Muskeln (Qualität rot/gelb/grün) + Radar dieses Workouts.
   const day = format(workout.startedAt, "yyyy-MM-dd");
   const setsByMuscle: Record<string, number> = {};
@@ -110,7 +124,7 @@ export default async function WorkoutDetail({
 
   return (
     <div className="space-y-5">
-      {unlocked.length > 0 && (
+      {(unlocked.length > 0 || unlockedTitles.length > 0) && (
         <AchievementPopup
           workoutId={workout.id}
           items={unlocked.map((a) => ({
@@ -118,6 +132,12 @@ export default async function WorkoutDetail({
             title: a.title,
             desc: a.desc,
             points: a.points,
+          }))}
+          titles={unlockedTitles.map((tt) => ({
+            id: tt.id,
+            name: tt.name,
+            rarity: tt.rarity,
+            condition: tt.condition,
           }))}
         />
       )}
@@ -171,6 +191,38 @@ export default async function WorkoutDetail({
               </li>
             ))}
           </ul>
+        </Card>
+      )}
+
+      {/* Durch dieses Workout neu freigeschaltete Titel */}
+      {unlockedTitles.length > 0 && (
+        <Card className="space-y-2 border-amber-400/40 bg-amber-400/5">
+          <div className="flex items-center gap-2">
+            <Award className="size-5 text-amber-400" />
+            <h2 className="font-semibold text-amber-400">
+              {unlockedTitles.length === 1
+                ? "Neuer Titel freigeschaltet!"
+                : `${unlockedTitles.length} neue Titel freigeschaltet!`}
+            </h2>
+          </div>
+          <ul className="space-y-1.5">
+            {unlockedTitles.map((tt) => (
+              <li key={tt.id} className="flex items-center gap-2 text-sm">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-amber-400/15">
+                  <Award className="size-4 text-amber-400" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <TitleBadge name={tt.name} rarity={tt.rarity} className="text-sm" />
+                  <span className="block truncate text-xs text-muted">
+                    {tt.condition}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-muted">
+            Titel im Profil oder Titel-Tab auswählen.
+          </p>
         </Card>
       )}
 

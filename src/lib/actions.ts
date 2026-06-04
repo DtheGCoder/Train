@@ -23,7 +23,7 @@ import {
   evaluateAchievements,
   type Stats,
 } from "@/lib/achievements";
-import { titleById } from "@/lib/titles";
+import { titleById, evaluateTitles } from "@/lib/titles";
 import {
   decideExercise,
   decideDeload,
@@ -602,12 +602,16 @@ export async function finishWorkout(workoutId: string, name?: string) {
   // und die Tages-Routine wie ein echter Coach anpassen.
   await advanceProgramAfterWorkout(workout.routineId, user.id);
 
-  // Neu freigeschaltete Achievements ermitteln und am Workout vermerken.
+  // Neu freigeschaltete Achievements + Titel ermitteln und am Workout vermerken.
   const newlyUnlocked = await syncAchievements(user.id);
-  if (newlyUnlocked.length > 0) {
+  const newTitles = await syncTitles(user.id);
+  if (newlyUnlocked.length > 0 || newTitles.length > 0) {
     await db.workout.update({
       where: { id: workoutId },
-      data: { unlockedJson: JSON.stringify(newlyUnlocked) },
+      data: {
+        unlockedJson: JSON.stringify(newlyUnlocked),
+        unlockedTitlesJson: JSON.stringify(newTitles),
+      },
     });
   }
 
@@ -706,9 +710,10 @@ export async function deleteWorkout(workoutId: string) {
     await recomputePRsForExercise(exerciseId, user.id);
   }
 
-  // Achievement-Stand neu berechnen – fällt man unter eine Schwelle, geht das
-  // Achievement (und davon abhängige Titel) wieder ab.
+  // Achievement- und Titel-Stand neu berechnen – fällt man unter eine Schwelle,
+  // geht das Achievement (und davon abhängige Titel) wieder ab.
   await syncAchievements(user.id);
+  await syncTitles(user.id);
 
   revalidatePath("/calendar");
   revalidatePath("/stats");
@@ -1929,6 +1934,25 @@ async function syncAchievements(userId: string): Promise<string[]> {
   await db.settings.update({
     where: { id: s.id },
     data: { achievementsJson: JSON.stringify(earnedNow) },
+  });
+  return newly;
+}
+
+// Aktualisiert den gespeicherten Titel-Stand und gibt die NEU freigeschalteten
+// Titel-IDs zurück (für „neu durch dieses Workout"). Titel hängen u. a. an der
+// Anzahl freigeschalteter Achievements – daher beide aus denselben Stats.
+async function syncTitles(userId: string): Promise<string[]> {
+  const stats = await userStatsFor(userId);
+  const earnedCount = evaluateAchievements(stats).filter((a) => a.earned).length;
+  const earnedNow = evaluateTitles({ stats, earnedCount })
+    .filter((t) => t.unlocked)
+    .map((t) => t.title.id);
+  const s = await ensureSettings(userId);
+  const before = new Set(parseIds(s.titlesJson));
+  const newly = earnedNow.filter((id) => !before.has(id));
+  await db.settings.update({
+    where: { id: s.id },
+    data: { titlesJson: JSON.stringify(earnedNow) },
   });
   return newly;
 }
