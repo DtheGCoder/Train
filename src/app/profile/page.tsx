@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { CoachProfileForm } from "@/components/coach-profile-form";
 import { AvatarUploader } from "@/components/avatar-uploader";
 import { TitlesView, type TitleRow } from "@/components/titles-view";
+import { ProfileTabs } from "@/components/profile-tabs";
 import {
   statsFromWorkouts,
   addNutrition,
@@ -108,14 +109,8 @@ export default async function ProfilePage() {
     },
   ];
 
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Coach & Profil"
-        subtitle="Dein Profil, Coach-Einstellungen und mehr – alles an einem Ort."
-      />
-
-      {/* Identität */}
+  const profileTab = (
+    <>
       {user && (
         <div className="reveal">
           <AvatarUploader
@@ -125,10 +120,8 @@ export default async function ProfilePage() {
           />
         </div>
       )}
-
-      {/* Titel auswählen */}
       {user && titleRows.length > 0 && (
-        <div className="reveal" style={{ animationDelay: "40ms" }}>
+        <div className="reveal" style={{ animationDelay: "60ms" }}>
           <Card className="space-y-3">
             <div className="flex items-center gap-2">
               <BadgeCheck className="size-5 text-primary" />
@@ -142,9 +135,55 @@ export default async function ProfilePage() {
           </Card>
         </div>
       )}
+    </>
+  );
 
-      {/* Schnellzugriff */}
-      <section className="reveal space-y-2" style={{ animationDelay: "60ms" }}>
+  const coachTab = (
+    <>
+      <div className="reveal">
+        <Card className="flex items-start gap-3 border-primary/30 bg-primary/10">
+          <Sparkles className="mt-0.5 size-5 shrink-0 text-primary" />
+          <p className="text-sm text-muted">
+            Der Coach schätzt aus deinen Trainingsdaten dein Maximum je Übung und
+            empfiehlt im Workout live Gewicht und Wiederholungen. Er passt sich an,
+            wenn du mehr schaffst — und testet, wie weit du gehen kannst.
+          </p>
+        </Card>
+      </div>
+      {tips.length > 0 && (
+        <div className="reveal" style={{ animationDelay: "60ms" }}>
+          <Card className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Lightbulb className="size-5 text-primary" />
+              <h2 className="font-semibold">Coach-Tipps für dich</h2>
+            </div>
+            <ul className="space-y-2">
+              {tips.map((t, i) => (
+                <li key={i} className="flex gap-2 text-sm text-muted">
+                  <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/70" />
+                  <span className="leading-snug">{t}</span>
+                </li>
+              ))}
+            </ul>
+            <InfoBox>
+              <span className="font-semibold text-foreground">RPE & RIR:</span> Der
+              RPE (1–10) sagt, wie schwer ein Satz war; RIR (Reps in Reserve) sind
+              die Wiederholungen, die am Satzende noch möglich wären. RPE&nbsp;8 ≈
+              2 RIR. Trägst du den RPE ein, steuert der Coach Last und Pausen
+              spürbar genauer.
+            </InfoBox>
+          </Card>
+        </div>
+      )}
+      <div className="reveal" style={{ animationDelay: "120ms" }}>
+        <CoachProfileForm profile={p} equipment={equipment} />
+      </div>
+    </>
+  );
+
+  const moreTab = (
+    <>
+      <section className="reveal space-y-2">
         <h2 className="text-sm font-semibold text-muted">Mehr entdecken</h2>
         <div className="grid gap-2 sm:grid-cols-3">
           {links.map((l) => (
@@ -164,52 +203,8 @@ export default async function ProfilePage() {
           ))}
         </div>
       </section>
-
-      {/* Coach-Einleitung */}
-      <div className="reveal" style={{ animationDelay: "120ms" }}>
-        <Card className="flex items-start gap-3 border-primary/30 bg-primary/10">
-          <Sparkles className="mt-0.5 size-5 shrink-0 text-primary" />
-          <p className="text-sm text-muted">
-            Der Coach schätzt aus deinen Trainingsdaten dein Maximum je Übung und
-            empfiehlt im Workout live Gewicht und Wiederholungen. Er passt sich an,
-            wenn du mehr schaffst — und testet, wie weit du gehen kannst.
-          </p>
-        </Card>
-      </div>
-
-      {/* Personalisierte Coach-Tipps + Begriffs-Erklärung */}
-      {tips.length > 0 && (
-        <div className="reveal" style={{ animationDelay: "160ms" }}>
-        <Card className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Lightbulb className="size-5 text-primary" />
-            <h2 className="font-semibold">Coach-Tipps für dich</h2>
-          </div>
-          <ul className="space-y-2">
-            {tips.map((t, i) => (
-              <li key={i} className="flex gap-2 text-sm text-muted">
-                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-primary/70" />
-                <span className="leading-snug">{t}</span>
-              </li>
-            ))}
-          </ul>
-          <InfoBox>
-            <span className="font-semibold text-foreground">RPE & RIR:</span> Der
-            RPE (1–10) sagt, wie schwer ein Satz war; RIR (Reps in Reserve) sind
-            die Wiederholungen, die am Satzende noch möglich wären. RPE&nbsp;8 ≈
-            2 RIR (zwei saubere Wdh. hätten noch gepasst). Trägst du den RPE ein,
-            steuert der Coach Last und Pausen spürbar genauer.
-          </InfoBox>
-        </Card>
-        </div>
-      )}
-
-      <div className="reveal" style={{ animationDelay: "200ms" }}>
-        <CoachProfileForm profile={p} equipment={equipment} />
-      </div>
-
-      {/* Konto (v. a. für Mobil, wo die Sidebar fehlt) */}
-      <Card className="space-y-3 md:hidden">
+      <div className="reveal" style={{ animationDelay: "60ms" }}>
+      <Card className="space-y-3">
         <h2 className="font-semibold">Konto</h2>
         {user && (
           <p className="text-sm text-muted">
@@ -232,6 +227,17 @@ export default async function ProfilePage() {
           </Button>
         </form>
       </Card>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Coach & Profil"
+        subtitle="Profil, Coach-Einstellungen und mehr – sauber gegliedert."
+      />
+      <ProfileTabs profile={profileTab} coach={coachTab} more={moreTab} />
     </div>
   );
 }

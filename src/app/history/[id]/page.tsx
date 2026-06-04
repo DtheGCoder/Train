@@ -8,6 +8,7 @@ import { setTypeShort } from "@/lib/labels";
 import { formatDuration, epley1RM } from "@/lib/utils";
 import { saveWorkoutAsRoutine } from "@/lib/actions";
 import { ACHIEVEMENTS } from "@/lib/achievements";
+import { AchievementPopup } from "@/components/achievement-popup";
 import { MuscleQualityMap, muscleQuality } from "@/components/muscle-map";
 import { MuscleGroupRadar, type RadarPoint } from "@/components/stats-muscle-radar";
 import { format } from "date-fns";
@@ -109,6 +110,17 @@ export default async function WorkoutDetail({
 
   return (
     <div className="space-y-5">
+      {unlocked.length > 0 && (
+        <AchievementPopup
+          workoutId={workout.id}
+          items={unlocked.map((a) => ({
+            id: a.id,
+            title: a.title,
+            desc: a.desc,
+            points: a.points,
+          }))}
+        />
+      )}
       <Link
         href="/calendar"
         className="inline-flex items-center gap-1 text-sm text-muted hover:text-foreground"

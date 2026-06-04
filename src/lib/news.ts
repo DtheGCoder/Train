@@ -8,10 +8,19 @@ export type NewsHighlight = {
   text: string;
 };
 
+export type NewsKind = "update" | "tip" | "info";
+
+export const KIND_LABEL: Record<NewsKind, string> = {
+  update: "Updates",
+  tip: "Tipps",
+  info: "Infos",
+};
+
 export type NewsItem = {
   id: string;
   date: string; // ISO YYYY-MM-DD
-  category: string; // kurzes Label, z. B. "Update"
+  kind: NewsKind; // Kategorie fürs Postfach-Filter
+  category: string; // kurzes Label, z. B. "Großes Update"
   title: string;
   summary: string;
   images?: string[]; // Pfade unter /public
@@ -21,8 +30,37 @@ export type NewsItem = {
 
 export const NEWS: NewsItem[] = [
   {
+    id: "2026-06-05-fatloss-fooddb",
+    date: "2026-06-05",
+    kind: "update",
+    category: "Update",
+    title: "Ziel „Abnehmen“, riesige Lebensmittel-DB & aufgeräumtes Profil",
+    summary:
+      "Neues Ziel Abnehmen mit Kaloriendefizit, eine große kategorisierte Lebensmittel-Datenbank inkl. Fast Food, Profil-Tabs und animierte Achievement-Pop-ups.",
+    highlights: [
+      {
+        icon: "apple",
+        title: "Neues Ziel: Abnehmen",
+        text: "Wähle im Profil „Abnehmen“ – der Ernährungs-Coach rechnet dann mit moderatem Kaloriendefizit, hält das Protein hoch (Muskelerhalt) und bezieht dein Körpergewicht und deine Trainings (mehr Aktivität = mehr Spielraum) mit ein.",
+      },
+      {
+        icon: "layers",
+        title: "Riesige Lebensmittel-Datenbank",
+        text: "Hunderte Lebensmittel, kategorisiert (Protein, Kohlenhydrate, Snacks, Getränke …) – inklusive Fast Food mit echten Werten: Big Mac, McNuggets, Whopper, KFC, Subway, Döner, Pizza & mehr. Im Eintragen-Menü nach Kategorie filterbar.",
+      },
+      {
+        icon: "gauge",
+        title: "Profil in Tabs & Pop-ups",
+        text: "Der Profilbereich ist jetzt in Tabs gegliedert (Profil · Coach · Mehr). Neu freigeschaltete Achievements feiern dich nach dem Workout mit einem animierten Pop-up. Das Postfach kannst du jetzt nach Kategorien filtern.",
+      },
+    ],
+    footer:
+      "Stell im Profil dein Ziel und Körpergewicht ein – dann ist der Ernährungs-Coach perfekt auf dich abgestimmt.",
+  },
+  {
     id: "2026-06-04-nutrition-coach",
     date: "2026-06-04",
+    kind: "update",
     category: "Großes Update",
     title: "Ernährungs-Coach, smarter Coach & ein aufgeräumtes Menü",
     summary:

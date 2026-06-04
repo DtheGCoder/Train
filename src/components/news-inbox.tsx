@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { markNewsRead } from "@/lib/actions";
-import type { NewsItem } from "@/lib/news";
+import { KIND_LABEL, type NewsItem, type NewsKind } from "@/lib/news";
 
 const ICON: Record<string, typeof Apple> = {
   apple: Apple,
@@ -47,6 +47,7 @@ export function NewsInbox({
 }) {
   const [read, setRead] = useState<Set<string>>(() => new Set(readIds));
   const [openId, setOpenId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<NewsKind | "all">("all");
   const [, start] = useTransition();
 
   const open = (id: string) => {
@@ -67,19 +68,47 @@ export function NewsInbox({
   const current = items.find((n) => n.id === openId) ?? null;
   const unreadTotal = items.filter((n) => !read.has(n.id)).length;
 
+  const kinds = [...new Set(items.map((n) => n.kind))];
+  const shownItems = filter === "all" ? items : items.filter((n) => n.kind === filter);
+
   return (
     <>
-      {unreadTotal > 0 && (
-        <button
-          onClick={markAll}
-          className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-        >
-          <CheckCheck className="size-4" /> Alle als gelesen markieren
-        </button>
-      )}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex gap-1.5 overflow-x-auto">
+          <button
+            onClick={() => setFilter("all")}
+            className={cn(
+              "whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium",
+              filter === "all" ? "border-primary bg-primary/15 text-primary" : "border-border bg-surface text-muted",
+            )}
+          >
+            Alle
+          </button>
+          {kinds.map((k) => (
+            <button
+              key={k}
+              onClick={() => setFilter(k)}
+              className={cn(
+                "whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium",
+                filter === k ? "border-primary bg-primary/15 text-primary" : "border-border bg-surface text-muted",
+              )}
+            >
+              {KIND_LABEL[k]}
+            </button>
+          ))}
+        </div>
+        {unreadTotal > 0 && (
+          <button
+            onClick={markAll}
+            className="flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline"
+          >
+            <CheckCheck className="size-4" /> Alle gelesen
+          </button>
+        )}
+      </div>
 
       <ul className="space-y-2">
-        {items.map((n) => {
+        {shownItems.map((n) => {
           const isUnread = !read.has(n.id);
           return (
             <li key={n.id}>
