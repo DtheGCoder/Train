@@ -227,7 +227,24 @@ model User {
   personalRecords PersonalRecord[]
   programs        Program[]
   nutritionDays   NutritionDay[]
+  nutritionEntries NutritionEntry[]
   settings        Settings?
+}
+
+// Einzeln protokolliertes Lebensmittel/Mahlzeit eines Tages (mit Nährwerten).
+model NutritionEntry {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  date      String // YYYY-MM-DD
+  name      String
+  kcal      Float    @default(0)
+  protein   Float    @default(0)
+  carbs     Float    @default(0)
+  fat       Float    @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId, date])
 }
 
 // Ernährungs-Tagesprotokoll: abgehakte Plan-Items + manuelle Extras + Wasser.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import {
   Flame,
   Beef,
@@ -11,32 +11,42 @@ import {
   Plus,
   Minus,
   Pill,
-  UtensilsCrossed,
   Sparkles,
   Loader2,
   RotateCcw,
   Lightbulb,
+  X,
+  Search,
+  Trash2,
+  Utensils,
+  Lock,
 } from "lucide-react";
 import { Card } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import {
-  toggleNutritionItem,
+  addFoodEntry,
+  removeFoodEntry,
   addWater,
-  addNutritionExtra,
+  toggleNutritionItem,
   resetNutritionDay,
 } from "@/lib/actions";
-import type {
-  NutritionTargets,
-  PlanItem,
-  Macros,
+import {
+  FOODS,
+  scaleFood,
+  defaultQty,
+  type Food,
+  type NutritionTargets,
+  type PlanItem,
+  type Macros,
+  type FoodCoach,
 } from "@/lib/coach-nutrition";
 
-// Animierter Fortschrittsring.
+type Entry = { id: string } & { name: string } & Macros;
+
 function Ring({
   value,
   target,
   label,
-  unit,
   color,
   Icon,
   size = 96,
@@ -44,7 +54,6 @@ function Ring({
   value: number;
   target: number;
   label: string;
-  unit: string;
   color: string;
   Icon: typeof Flame;
   size?: number;
@@ -57,14 +66,7 @@ function Ring({
     <div className="flex flex-col items-center">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} className="-rotate-90">
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke="var(--surface-2)"
-            strokeWidth={8}
-          />
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={8} />
           <circle
             cx={size / 2}
             cy={size / 2}
@@ -87,7 +89,6 @@ function Ring({
         </div>
       </div>
       <p className="mt-1.5 text-xs font-medium">{label}</p>
-      <p className="text-[10px] text-muted">{unit}</p>
     </div>
   );
 }
@@ -117,90 +118,37 @@ function MacroBar({
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-surface-2">
-        <div
-          className="h-full rounded-full transition-[width] duration-500"
-          style={{ width: `${pct}%`, background: color }}
-        />
+        <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${pct}%`, background: color }} />
       </div>
     </div>
-  );
-}
-
-const KIND_META: Record<PlanItem["kind"], { Icon: typeof Pill; label: string }> = {
-  meal: { Icon: UtensilsCrossed, label: "Mahlzeiten" },
-  shake: { Icon: Droplet, label: "Nach dem Training" },
-  supp: { Icon: Pill, label: "Supplemente" },
-};
-
-function PlanRow({
-  item,
-  checked,
-  onToggle,
-}: {
-  item: PlanItem;
-  checked: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      className={cn(
-        "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors active:scale-[0.99]",
-        checked
-          ? "border-success/40 bg-success/5"
-          : "border-border bg-surface hover:bg-surface-2",
-      )}
-    >
-      <span
-        className={cn(
-          "flex size-7 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-          checked
-            ? "border-success bg-success text-white"
-            : "border-border text-transparent",
-        )}
-      >
-        <Check className="size-4" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className={cn("font-medium", checked && "text-muted line-through")}>
-          {item.label}
-          {item.dose && (
-            <span className="ml-1.5 text-xs font-semibold text-primary">
-              {item.dose}
-            </span>
-          )}
-        </p>
-        <p className="truncate text-xs text-muted">
-          {item.time}
-          {item.kind !== "supp" &&
-            ` · ${item.macros.kcal} kcal · ${item.macros.protein} g Eiweiß`}
-          {item.hint ? ` · ${item.hint}` : ""}
-        </p>
-      </div>
-    </button>
   );
 }
 
 export function NutritionDashboard({
   date,
   targets,
-  items,
-  checkedKeys,
   consumed,
+  entries,
+  coach,
+  supplements,
+  checkedSupps,
   waterMl,
   tips,
 }: {
   date: string;
   targets: NutritionTargets;
-  items: PlanItem[];
-  checkedKeys: string[];
   consumed: Macros;
+  entries: Entry[];
+  coach: FoodCoach;
+  supplements: PlanItem[];
+  checkedSupps: string[];
   waterMl: number;
   tips: string[];
 }) {
   const [, start] = useTransition();
   const [busy, setBusy] = useState(false);
-  const checked = new Set(checkedKeys);
+  const [showAdd, setShowAdd] = useState(false);
+  const checked = new Set(checkedSupps);
 
   const act = (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -210,20 +158,17 @@ export function NutritionDashboard({
     });
   };
 
-  const groups: PlanItem["kind"][] = ["meal", "shake", "supp"];
   const waterGoalL = (targets.waterMl / 1000).toFixed(1);
   const waterL = (waterMl / 1000).toFixed(1);
   const waterPct = Math.min(100, (waterMl / targets.waterMl) * 100);
 
   return (
     <div className={cn("space-y-4", busy && "pointer-events-none opacity-90")}>
-      {/* Status / Trainingstag */}
+      {/* Status */}
       <div
         className={cn(
           "rounded-2xl border p-3",
-          targets.isTrainingDay
-            ? "border-primary/30 bg-primary/5"
-            : "border-border bg-surface",
+          targets.isTrainingDay ? "border-primary/30 bg-primary/5" : "border-border bg-surface",
         )}
       >
         <p className="flex items-center gap-2 text-sm font-semibold">
@@ -233,68 +178,128 @@ export function NutritionDashboard({
         <p className="mt-1 text-xs leading-snug text-muted">{targets.note}</p>
       </div>
 
-      {/* Ringe + Makro-Balken */}
+      {/* Ringe + Makros */}
       <Card className="space-y-4">
         <div className="grid grid-cols-2 gap-2">
-          <Ring
-            value={consumed.kcal}
-            target={targets.kcal}
-            label="Kalorien"
-            unit="kcal"
-            color="var(--primary)"
-            Icon={Flame}
-          />
-          <Ring
-            value={consumed.protein}
-            target={targets.protein}
-            label="Protein"
-            unit="g"
-            color="#22c55e"
-            Icon={Beef}
-          />
+          <Ring value={consumed.kcal} target={targets.kcal} label="Kalorien" color="var(--primary)" Icon={Flame} />
+          <Ring value={consumed.protein} target={targets.protein} label="Protein" color="#22c55e" Icon={Beef} />
         </div>
         <div className="flex gap-4">
-          <MacroBar
-            value={consumed.carbs}
-            target={targets.carbs}
-            label="Kohlenhydrate"
-            color="#f59e0b"
-            Icon={Wheat}
-          />
-          <MacroBar
-            value={consumed.fat}
-            target={targets.fat}
-            label="Fett"
-            color="#a855f7"
-            Icon={Droplet}
-          />
+          <MacroBar value={consumed.carbs} target={targets.carbs} label="Kohlenhydrate" color="#f59e0b" Icon={Wheat} />
+          <MacroBar value={consumed.fat} target={targets.fat} label="Fett" color="#a855f7" Icon={Droplet} />
         </div>
-        <div className="flex flex-wrap gap-2 pt-1">
-          <QuickAdd
-            label="+ Eiweißshake"
-            sub="30 g · 130 kcal"
-            onClick={() =>
-              act(() =>
-                addNutritionExtra(date, { kcal: 130, protein: 30, carbs: 3, fat: 1 }),
-              )
-            }
-          />
-          <QuickAdd
-            label="+ Mahlzeit"
-            sub="~600 kcal"
-            onClick={() =>
-              act(() =>
-                addNutritionExtra(date, {
-                  kcal: 600,
-                  protein: 35,
-                  carbs: 60,
-                  fat: 18,
-                }),
-              )
-            }
-          />
-        </div>
+        <button
+          onClick={() => setShowAdd(true)}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground active:scale-[0.99]"
+        >
+          <Plus className="size-5" /> Essen eintragen
+        </button>
       </Card>
+
+      {/* Coach-Empfehlung */}
+      <Card className="space-y-3 border-primary/30 bg-primary/5">
+        <div className="flex items-center gap-2">
+          <Lightbulb className="size-5 text-primary" />
+          <div className="min-w-0">
+            <p className="font-semibold leading-tight">{coach.headline}</p>
+          </div>
+        </div>
+        <p className="text-sm leading-snug text-muted">{coach.detail}</p>
+        {coach.foods.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {coach.foods.map((f) => (
+              <button
+                key={f.food.id}
+                onClick={() =>
+                  act(() =>
+                    addFoodEntry(date, {
+                      name: `${f.food.name} (${f.qty} ${f.food.unit})`,
+                      ...f.macros,
+                    }),
+                  )
+                }
+                className="group flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-left transition-colors hover:border-primary/40 active:scale-95"
+              >
+                <Plus className="size-4 text-primary" />
+                <span>
+                  <span className="block text-sm font-medium leading-tight">
+                    {f.food.name}
+                    <span className="text-muted"> · {f.qty} {f.food.unit}</span>
+                  </span>
+                  <span className="block text-[11px] text-muted">
+                    {f.macros.kcal} kcal · {f.macros.protein} g P · {f.reason}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        {coach.meal && (
+          <button
+            onClick={() =>
+              act(() =>
+                addFoodEntry(date, { name: coach.meal!.name, ...coach.meal!.macros }),
+              )
+            }
+            className="flex w-full items-center gap-3 rounded-xl border border-primary/30 bg-surface px-3 py-2.5 text-left transition-colors hover:bg-primary/5 active:scale-[0.99]"
+          >
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/15">
+              <Utensils className="size-5 text-primary" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold leading-tight">
+                Mahlzeit-Idee: {coach.meal.name}
+              </span>
+              <span className="block truncate text-xs text-muted">{coach.meal.desc}</span>
+              <span className="block text-[11px] text-muted">
+                {coach.meal.macros.kcal} kcal · {coach.meal.macros.protein} g Protein
+              </span>
+            </span>
+            <Plus className="size-5 shrink-0 text-primary" />
+          </button>
+        )}
+      </Card>
+
+      {/* Heute gegessen */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-muted">
+            <Utensils className="size-4 text-primary" /> Heute gegessen
+          </h2>
+          {entries.length > 0 && (
+            <span className="text-xs text-muted">{entries.length} Einträge</span>
+          )}
+        </div>
+        {entries.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border py-6 text-center text-sm text-muted">
+            Noch nichts eingetragen. Tippe „Essen eintragen“ oder eine Empfehlung.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {entries.map((e) => (
+              <li
+                key={e.id}
+                className="flex items-center gap-3 rounded-xl border border-border bg-surface px-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{e.name}</p>
+                  <p className="text-xs text-muted">
+                    {Math.round(e.kcal)} kcal · {Math.round(e.protein)} g P ·{" "}
+                    {Math.round(e.carbs)} g K · {Math.round(e.fat)} g F
+                  </p>
+                </div>
+                <button
+                  onClick={() => act(() => removeFoodEntry(e.id))}
+                  className="rounded-lg p-2 text-muted hover:text-danger"
+                  aria-label="Eintrag entfernen"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {/* Wasser */}
       <Card className="space-y-3">
@@ -303,69 +308,64 @@ export function NutritionDashboard({
             <Droplets className="size-5 text-sky-400" /> Wasser
           </p>
           <p className="text-sm tabular-nums text-muted">
-            <span className="font-bold text-foreground">{waterL} l</span> /{" "}
-            {waterGoalL} l
+            <span className="font-bold text-foreground">{waterL} l</span> / {waterGoalL} l
           </p>
         </div>
         <div className="h-2.5 overflow-hidden rounded-full bg-surface-2">
-          <div
-            className="h-full rounded-full bg-sky-400 transition-[width] duration-500"
-            style={{ width: `${waterPct}%` }}
-          />
+          <div className="h-full rounded-full bg-sky-400 transition-[width] duration-500" style={{ width: `${waterPct}%` }} />
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => act(() => addWater(date, 250))}
-            className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-sky-400/15 py-2 text-sm font-semibold text-sky-400 active:scale-95"
-          >
+          <button onClick={() => act(() => addWater(date, 250))} className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-sky-400/15 py-2 text-sm font-semibold text-sky-400 active:scale-95">
             <Plus className="size-4" /> 250 ml
           </button>
-          <button
-            onClick={() => act(() => addWater(date, 500))}
-            className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-sky-400/15 py-2 text-sm font-semibold text-sky-400 active:scale-95"
-          >
+          <button onClick={() => act(() => addWater(date, 500))} className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-sky-400/15 py-2 text-sm font-semibold text-sky-400 active:scale-95">
             <Plus className="size-4" /> 500 ml
           </button>
-          <button
-            onClick={() => act(() => addWater(date, -250))}
-            className="flex items-center justify-center rounded-lg bg-surface-2 px-3 text-muted active:scale-95"
-            aria-label="250 ml abziehen"
-          >
+          <button onClick={() => act(() => addWater(date, -250))} className="flex items-center justify-center rounded-lg bg-surface-2 px-3 text-muted active:scale-95" aria-label="250 ml abziehen">
             <Minus className="size-4" />
           </button>
         </div>
       </Card>
 
-      {/* Tagesplan zum Abhaken */}
-      {groups.map((kind) => {
-        const list = items.filter((it) => it.kind === kind);
-        if (list.length === 0) return null;
-        const meta = KIND_META[kind];
-        return (
-          <section key={kind} className="space-y-2">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-muted">
-              <meta.Icon className="size-4 text-primary" /> {meta.label}
-            </h2>
-            <div className="space-y-2">
-              {list.map((it) => (
-                <PlanRow
-                  key={it.key}
-                  item={it}
-                  checked={checked.has(it.key)}
-                  onToggle={() => act(() => toggleNutritionItem(date, it.key))}
-                />
-              ))}
-            </div>
-          </section>
-        );
-      })}
+      {/* Supplemente */}
+      <section className="space-y-2">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted">
+          <Pill className="size-4 text-primary" /> Supplemente
+        </h2>
+        <div className="space-y-2">
+          {supplements.map((it) => {
+            const on = checked.has(it.key);
+            return (
+              <button
+                key={it.key}
+                onClick={() => act(() => toggleNutritionItem(date, it.key))}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors active:scale-[0.99]",
+                  on ? "border-success/40 bg-success/5" : "border-border bg-surface hover:bg-surface-2",
+                )}
+              >
+                <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full border-2", on ? "border-success bg-success text-white" : "border-border text-transparent")}>
+                  <Check className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className={cn("font-medium", on && "text-muted line-through")}>
+                    {it.label}
+                    {it.dose && <span className="ml-1.5 text-xs font-semibold text-primary">{it.dose}</span>}
+                  </p>
+                  <p className="truncate text-xs text-muted">{it.time}{it.hint ? ` · ${it.hint}` : ""}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       {/* Coach-Tipps */}
       {tips.length > 0 && (
-        <Card className="space-y-3 border-primary/30 bg-primary/5">
+        <Card className="space-y-3">
           <div className="flex items-center gap-2">
             <Lightbulb className="size-5 text-primary" />
-            <h2 className="font-semibold">Coach-Tipps zur Ernährung</h2>
+            <h2 className="font-semibold">Coach-Tipps</h2>
           </div>
           <ul className="space-y-2">
             {tips.map((t, i) => (
@@ -385,29 +385,207 @@ export function NutritionDashboard({
         {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RotateCcw className="size-3.5" />}
         Heutigen Tag zurücksetzen
       </button>
+
+      {showAdd && (
+        <AddFoodSheet
+          onClose={() => setShowAdd(false)}
+          onAdd={(food) => act(() => addFoodEntry(date, food))}
+        />
+      )}
     </div>
   );
 }
 
-function QuickAdd({
-  label,
-  sub,
-  onClick,
+/* ---------------- Essen-hinzufügen-Overlay ---------------- */
+
+function AddFoodSheet({
+  onClose,
+  onAdd,
 }: {
-  label: string;
-  sub: string;
-  onClick: () => void;
+  onClose: () => void;
+  onAdd: (food: { name: string; kcal: number; protein: number; carbs: number; fat: number }) => void;
 }) {
+  const [tab, setTab] = useState<"food" | "custom">("food");
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState<Food | null>(null);
+  const [qty, setQty] = useState<number>(100);
+
+  // Eigenes
+  const [cName, setCName] = useState("");
+  const [cKcal, setCKcal] = useState("");
+  const [cP, setCP] = useState("");
+  const [cC, setCC] = useState("");
+  const [cF, setCF] = useState("");
+
+  const list = useMemo(() => {
+    const n = q.trim().toLowerCase();
+    return FOODS.filter((f) => !n || f.name.toLowerCase().includes(n));
+  }, [q]);
+
+  const preview = sel ? scaleFood(sel, qty) : null;
+
+  const selectFood = (f: Food) => {
+    setSel(f);
+    setQty(defaultQty(f));
+  };
+
   return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-2 rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-left active:scale-95"
-    >
-      <Plus className="size-4 text-primary" />
-      <span>
-        <span className="block text-sm font-medium leading-tight">{label}</span>
-        <span className="block text-[10px] text-muted">{sub}</span>
-      </span>
-    </button>
+    <div className="fixed inset-0 z-[70] flex flex-col bg-background">
+      <div className="flex items-center gap-3 border-b border-border px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+        <button onClick={onClose} aria-label="Schließen" className="-ml-2 flex size-11 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-foreground">
+          <X className="size-5" />
+        </button>
+        <p className="font-semibold">Essen eintragen</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-1 border-b border-border px-4 py-2">
+        {(["food", "custom"] as const).map((id) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={cn(
+              "rounded-lg py-2 text-sm font-semibold transition-colors",
+              tab === id ? "bg-surface-2 text-foreground" : "text-muted",
+            )}
+          >
+            {id === "food" ? "Lebensmittel" : "Eigenes"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "food" ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="px-4 pt-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Lebensmittel suchen…"
+                className="w-full rounded-lg border border-border bg-surface-2 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+          <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-4 py-3">
+            {list.map((f) => (
+              <li key={f.id}>
+                <button
+                  onClick={() => selectFood(f)}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left",
+                    sel?.id === f.id ? "border-primary bg-primary/5" : "border-border bg-surface",
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{f.name}</span>
+                    <span className="block text-[11px] text-muted">
+                      pro {f.base} {f.unit}: {f.kcal} kcal · {f.protein} g P
+                    </span>
+                  </span>
+                </button>
+              </li>
+            ))}
+            {list.length === 0 && (
+              <li className="py-6 text-center text-sm text-muted">
+                Nichts gefunden – leg es unter „Eigenes“ an.
+              </li>
+            )}
+          </ul>
+
+          {sel && preview && (
+            <div className="border-t border-border bg-surface px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3">
+              <p className="font-semibold">{sel.name}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <button onClick={() => setQty((x) => Math.max(sel.unit === "g" ? 10 : 1, x - (sel.unit === "g" ? 10 : 1)))} className="flex size-10 items-center justify-center rounded-lg bg-surface-2 text-muted active:scale-95">
+                  <Minus className="size-4" />
+                </button>
+                <div className="flex flex-1 items-center gap-1 rounded-lg border border-border bg-surface-2 px-3">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    value={qty}
+                    onChange={(e) => setQty(Math.max(0, parseInt(e.target.value) || 0))}
+                    className="h-10 w-full bg-transparent text-center text-base outline-none"
+                  />
+                  <span className="text-sm text-muted">{sel.unit}</span>
+                </div>
+                <button onClick={() => setQty((x) => x + (sel.unit === "g" ? 10 : 1))} className="flex size-10 items-center justify-center rounded-lg bg-surface-2 text-muted active:scale-95">
+                  <Plus className="size-4" />
+                </button>
+              </div>
+              <p className="mt-2 text-center text-sm tabular-nums text-muted">
+                {preview.kcal} kcal · {preview.protein} g P · {preview.carbs} g K · {preview.fat} g F
+              </p>
+              <button
+                onClick={() => {
+                  onAdd({ name: `${sel.name} (${qty} ${sel.unit})`, ...preview });
+                  setSel(null);
+                  setQ("");
+                }}
+                className="mt-2 w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground active:scale-[0.99]"
+              >
+                Hinzufügen
+              </button>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+          <label className="block space-y-1">
+            <span className="text-sm font-medium">Was hast du gegessen?</span>
+            <input
+              value={cName}
+              onChange={(e) => setCName(e.target.value)}
+              placeholder="z. B. Hähnchen-Wrap"
+              className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-sm outline-none focus:border-primary"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            {(
+              [
+                ["Kalorien", cKcal, setCKcal, "kcal"],
+                ["Protein", cP, setCP, "g"],
+                ["Kohlenhydrate", cC, setCC, "g"],
+                ["Fett", cF, setCF, "g"],
+              ] as [string, string, (v: string) => void, string][]
+            ).map(([label, val, setter, unit]) => (
+              <label key={label} className="block space-y-1">
+                <span className="text-xs text-muted">{label} ({unit})</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={val}
+                  onChange={(e) => setter(e.target.value)}
+                  placeholder="0"
+                  className="w-full rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-center text-base outline-none focus:border-primary"
+                />
+              </label>
+            ))}
+          </div>
+          <p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted">
+            <Lock className="mt-0.5 size-3 shrink-0" />
+            Nährwerte stehen auf der Verpackung (je Portion) oder findest du schnell
+            online. Je genauer, desto besser die Coach-Empfehlungen.
+          </p>
+          <button
+            disabled={cName.trim().length === 0}
+            onClick={() => {
+              onAdd({
+                name: cName.trim(),
+                kcal: parseFloat(cKcal) || 0,
+                protein: parseFloat(cP) || 0,
+                carbs: parseFloat(cC) || 0,
+                fat: parseFloat(cF) || 0,
+              });
+              setCName(""); setCKcal(""); setCP(""); setCC(""); setCF("");
+              onClose();
+            }}
+            className="w-full rounded-xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50 active:scale-[0.99]"
+          >
+            Hinzufügen
+          </button>
+        </div>
+      )}
+    </div>
   );
 }

@@ -31,8 +31,8 @@ export const NEWS: NewsItem[] = [
     highlights: [
       {
         icon: "apple",
-        title: "Neuer Ernährungs-Coach",
-        text: "Eigener Tab „Ernährung“: persönliche Tagesziele (Kalorien, Protein, Carbs, Fett, Wasser) aus deinem Profil und dem Trainingstag. Abhakbarer Tagesplan mit Mahlzeiten, Post-Workout-Shake und Supplementen inkl. Dosierung – mit animierten Fortschrittsringen.",
+        title: "Neuer Ernährungs-Coach mit Essens-Tracking",
+        text: "Eigener Tab „Ernährung“: persönliche Tagesziele (Kalorien, Protein, Carbs, Fett, Wasser). Trag genau ein, was du isst – aus einer Lebensmittel-Datenbank mit Mengen­angabe oder als eigener Eintrag. Der Coach empfiehlt anhand der noch offenen Nährwerte konkrete Lebensmittel (z. B. Magerquark, Brokkoli) und ganze Mahlzeiten. Plus Wasser-Tracker und Supplemente mit Dosierung.",
       },
       {
         icon: "flame",

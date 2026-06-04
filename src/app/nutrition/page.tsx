@@ -6,8 +6,8 @@ import { loadCoachProfile } from "@/lib/coach-data";
 import { age } from "@/lib/coach";
 import {
   nutritionTargets,
-  planItems,
-  sumChecked,
+  supplementItems,
+  foodCoach,
   nutritionTips,
   todayKey,
   yesterdayKey,
@@ -26,11 +26,10 @@ export default async function NutritionPage() {
   const yKey = yesterdayKey();
   const isoToday = isoWeekdayToday();
 
-  // Trainingskontext: aktives Programm (Wochentag) + jüngste Workouts.
-  const [program, recent, todayRow] = await Promise.all([
+  const [program, recent, todayRow, entries] = await Promise.all([
     db.program.findFirst({
       where: { userId: user.id, active: true },
-      select: { weekdays: true, daysPerWeek: true },
+      select: { weekdays: true },
     }),
     db.workout.findMany({
       where: { userId: user.id, finishedAt: { not: null } },
@@ -43,6 +42,10 @@ export default async function NutritionPage() {
     }),
     db.nutritionDay.findUnique({
       where: { userId_date: { userId: user.id, date } },
+    }),
+    db.nutritionEntry.findMany({
+      where: { userId: user.id, date },
+      orderBy: { createdAt: "asc" },
     }),
   ]);
 
@@ -99,21 +102,25 @@ export default async function NutritionPage() {
     );
   }
 
-  const items = planItems(targets);
-  let checkedKeys: string[] = [];
+  const consumed = entries.reduce(
+    (acc, e) => ({
+      kcal: acc.kcal + e.kcal,
+      protein: acc.protein + e.protein,
+      carbs: acc.carbs + e.carbs,
+      fat: acc.fat + e.fat,
+    }),
+    { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+  );
+
+  const coach = foodCoach(targets, consumed);
+
+  let checkedSupps: string[] = [];
   try {
     const v = JSON.parse(todayRow?.checkedJson ?? "[]");
-    if (Array.isArray(v)) checkedKeys = v as string[];
+    if (Array.isArray(v)) checkedSupps = v as string[];
   } catch {
-    checkedKeys = [];
+    checkedSupps = [];
   }
-  const fromChecked = sumChecked(items, new Set(checkedKeys));
-  const consumed = {
-    kcal: fromChecked.kcal + (todayRow?.extraKcal ?? 0),
-    protein: fromChecked.protein + (todayRow?.extraProtein ?? 0),
-    carbs: fromChecked.carbs + (todayRow?.extraCarbs ?? 0),
-    fat: fromChecked.fat + (todayRow?.extraFat ?? 0),
-  };
 
   const tips = nutritionTips(profile, {
     isTrainingDay,
@@ -127,14 +134,23 @@ export default async function NutritionPage() {
     <div className="space-y-5">
       <PageHeader
         title="Ernährung"
-        subtitle="Deine Ziele für heute – abhaken, was du gegessen hast"
+        subtitle="Trag ein, was du isst – je genauer, desto besser hilft der Coach"
       />
       <NutritionDashboard
         date={date}
         targets={targets}
-        items={items}
-        checkedKeys={checkedKeys}
         consumed={consumed}
+        entries={entries.map((e) => ({
+          id: e.id,
+          name: e.name,
+          kcal: e.kcal,
+          protein: e.protein,
+          carbs: e.carbs,
+          fat: e.fat,
+        }))}
+        coach={coach}
+        supplements={supplementItems()}
+        checkedSupps={checkedSupps}
         waterMl={todayRow?.waterMl ?? 0}
         tips={tips}
       />

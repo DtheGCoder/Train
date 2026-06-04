@@ -1776,6 +1776,36 @@ export async function addNutritionExtra(
 export async function resetNutritionDay(date: string) {
   const user = await requireUser();
   await db.nutritionDay.deleteMany({ where: { userId: user.id, date } });
+  await db.nutritionEntry.deleteMany({ where: { userId: user.id, date } });
+  revalidatePath("/nutrition");
+}
+
+// Ein protokolliertes Lebensmittel / eine Mahlzeit mit Nährwerten hinzufügen.
+export async function addFoodEntry(
+  date: string,
+  food: { name: string; kcal: number; protein: number; carbs: number; fat: number },
+) {
+  const user = await requireUser();
+  const name = food.name.trim().slice(0, 80);
+  if (!name) return;
+  const clamp = (n: number) => Math.max(0, Math.min(20000, Number(n) || 0));
+  await db.nutritionEntry.create({
+    data: {
+      userId: user.id,
+      date,
+      name,
+      kcal: clamp(food.kcal),
+      protein: clamp(food.protein),
+      carbs: clamp(food.carbs),
+      fat: clamp(food.fat),
+    },
+  });
+  revalidatePath("/nutrition");
+}
+
+export async function removeFoodEntry(id: string) {
+  const user = await requireUser();
+  await db.nutritionEntry.deleteMany({ where: { id, userId: user.id } });
   revalidatePath("/nutrition");
 }
 
