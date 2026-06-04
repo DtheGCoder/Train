@@ -120,6 +120,9 @@ export default async function WorkoutPage({
     nameEn: e.nameEn,
     muscleSlug: e.primaryMuscle.slug,
     muscleName: e.primaryMuscle.nameDe,
+    secondarySlugs: e.secondaryMuscles
+      ? e.secondaryMuscles.split(",").filter(Boolean)
+      : [],
     equipmentSlug: e.equipment?.slug ?? null,
     equipmentName: e.equipment?.nameDe ?? null,
     mechanic: e.mechanic,
@@ -141,6 +144,9 @@ export default async function WorkoutPage({
       nameEn: we.exercise.nameEn,
       muscleName: we.exercise.primaryMuscle.nameDe,
       muscleSlug: we.exercise.primaryMuscle.slug,
+      secondarySlugs: we.exercise.secondaryMuscles
+        ? we.exercise.secondaryMuscles.split(",").filter(Boolean)
+        : [],
       equipmentSlug: we.exercise.equipment?.slug ?? null,
       equipmentName: we.exercise.equipment?.nameDe ?? null,
       mechanic: we.exercise.mechanic,

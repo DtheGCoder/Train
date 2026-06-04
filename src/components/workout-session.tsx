@@ -24,6 +24,8 @@ import {
   Sparkles,
   Play,
   Square,
+  ChevronDown,
+  CheckCircle2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
@@ -92,6 +94,7 @@ type ExState = {
   nameEn: string;
   muscleName: string;
   muscleSlug: string;
+  secondarySlugs: string[];
   equipmentSlug: string | null;
   equipmentName: string | null;
   mechanic: string;
@@ -148,6 +151,11 @@ export function WorkoutSession({
   coach: { profile: CoachProfile; baseline: Record<string, number> };
 }) {
   const [exercises, setExercises] = useState<ExState[]>(initial.exercises);
+  // Langzeit-Gedächtnis des Coaches als State, damit auch mitten im Workout
+  // hinzugefügte Übungen ihren Verlauf/Baseline mitbringen.
+  const [prevMap, setPrevMap] = useState(previous);
+  const [histMap, setHistMap] = useState(history);
+  const [baseMap, setBaseMap] = useState(coach.baseline);
   const [coachMsg, setCoachMsg] = useState<Record<string, CoachReaction>>({});
   const [elapsed, setElapsed] = useState(0);
   const [showPicker, setShowPicker] = useState(false);
@@ -183,6 +191,15 @@ export function WorkoutSession({
   const [coachOpen, setCoachOpen] = useState(true);
   // Übungs-Vorschau (Video & Details) – direkt im Workout, ohne wegzunavigieren.
   const [preview, setPreview] = useState<PreviewExercise | null>(null);
+  // Eingeklappte (i. d. R. erledigte) Übungen – spart Scrollen, mehr Übersicht.
+  const [collapsedEx, setCollapsedEx] = useState<Set<string>>(() => new Set());
+  const toggleCollapse = (exId: string) =>
+    setCollapsedEx((prev) => {
+      const n = new Set(prev);
+      if (n.has(exId)) n.delete(exId);
+      else n.add(exId);
+      return n;
+    });
 
   // Service Worker registrieren (für Pausen-Benachrichtigungen).
   useEffect(() => {
@@ -272,13 +289,22 @@ export function WorkoutSession({
     }
   };
 
-  // Live geschätztes 1RM: bestes aus Historie + abgeschlossenen Sätzen dieser
-  // Einheit (optional inkl. eines gerade abgeschlossenen Satzes).
+  // Bestes 1RM aus dem Langzeit-Verlauf dieser Übung (egal wann/wo trainiert).
+  const histBest = (exerciseId: string) =>
+    (histMap[exerciseId]?.sessions ?? []).reduce(
+      (m, s) => Math.max(m, s.bestE1RM),
+      0,
+    );
+
+  // Live geschätztes 1RM: bestes aus Baseline (PRs), Langzeit-Verlauf UND den
+  // abgeschlossenen Sätzen dieser Einheit. So plant der Coach auch beim ersten
+  // Satz, wenn die Übung früher schon gemacht wurde.
   const liveE1RM = (ex: ExState, extra?: SetState) => {
     const completed = ex.sets.filter((s) => s.isCompleted);
     const all = extra ? [...completed, extra] : completed;
     return Math.max(
-      coach.baseline[ex.exerciseId] ?? 0,
+      baseMap[ex.exerciseId] ?? 0,
+      histBest(ex.exerciseId),
       bestE1RM(all.map((s) => ({ weight: s.weight, reps: s.reps, rpe: s.rpe }))),
     );
   };
@@ -308,7 +334,7 @@ export function WorkoutSession({
   };
 
   // Verlaufs-Auswertung (Trend/Plateau) je Übung.
-  const insightOf = (ex: ExState) => analyzeExerciseHistory(history[ex.exerciseId]);
+  const insightOf = (ex: ExState) => analyzeExerciseHistory(histMap[ex.exerciseId]);
 
   // Aktueller Session-Zustand der Übung: bereits abgehakte Arbeitssätze
   // (optional ohne einen bestimmten Satz, z. B. den gerade abgehakten).
@@ -368,6 +394,8 @@ export function WorkoutSession({
         ),
       };
       if (isExerciseDone(updatedEx)) {
+        // Erledigte Übung automatisch einklappen → weniger Scrollen.
+        setCollapsedEx((prev) => new Set(prev).add(ex.id));
         // Alle geplanten Arbeitssätze sind erledigt: NICHT zum nächsten Satz
         // drängen, sondern zur nächsten Übung weiterleiten.
         const done = workingSetsOf(updatedEx).filter((x) => x.isCompleted).length;
@@ -466,6 +494,11 @@ export function WorkoutSession({
     startTransition(async () => {
       const created = await addExerciseToWorkout(initial.id, item.id);
       setAnimExIds((prev) => new Set(prev).add(created.id));
+      // Langzeit-Gedächtnis dieser Übung übernehmen (Baseline/Verlauf/letztes Mal),
+      // damit der Coach sofort planen kann und nichts „erstmal eintragen" muss.
+      setBaseMap((m) => ({ ...m, [created.exerciseId]: created.baseline }));
+      setHistMap((m) => ({ ...m, [created.exerciseId]: created.history }));
+      setPrevMap((m) => ({ ...m, [created.exerciseId]: created.previous }));
       setExercises((prev) => [
         ...prev,
         {
@@ -475,6 +508,7 @@ export function WorkoutSession({
           nameEn: item.nameEn,
           muscleName: item.muscleName,
           muscleSlug: item.muscleSlug,
+          secondarySlugs: item.secondarySlugs ?? [],
           equipmentSlug: item.equipmentSlug,
           equipmentName: item.equipmentName,
           mechanic: item.mechanic,
@@ -541,12 +575,16 @@ export function WorkoutSession({
       ),
     );
 
-    // Trainierte Muskeln (Primärmuskel je Übung) nach harten Sätzen einfärben.
+    // Trainierte Muskeln nach harten Sätzen einfärben: Primärmuskel voll,
+    // sekundär beteiligte Muskeln zur Hälfte (fairer, realistischer).
     const setsByMuscle: Record<string, number> = {};
     for (const ex of exercises) {
       const done = workingSetsOf(ex).filter((s) => s.isCompleted).length;
-      if (done > 0)
-        setsByMuscle[ex.muscleSlug] = (setsByMuscle[ex.muscleSlug] ?? 0) + done;
+      if (done <= 0) continue;
+      setsByMuscle[ex.muscleSlug] = (setsByMuscle[ex.muscleSlug] ?? 0) + done;
+      for (const sec of ex.secondarySlugs) {
+        setsByMuscle[sec] = (setsByMuscle[sec] ?? 0) + done * 0.5;
+      }
     }
     setFinishStatus(muscleQuality(setsByMuscle));
 
@@ -700,12 +738,17 @@ export function WorkoutSession({
       )}
 
       {exercises.map((ex) => {
-        const prev = previous[ex.exerciseId];
+        const prev = prevMap[ex.exerciseId];
         const isTime = isTimeEx(ex);
         const wsets = workingSetsOf(ex);
         const setsPlanned = wsets.length;
         const setsDone = wsets.filter((s) => s.isCompleted).length;
         const exDone = setsPlanned > 0 && setsDone === setsPlanned;
+        const isCollapsed = collapsedEx.has(ex.id);
+        const topW = Math.max(
+          0,
+          ...wsets.filter((s) => s.isCompleted).map((s) => s.weight),
+        );
         const nextName = exDone ? (nextOpenExercise(ex.id)?.name ?? null) : null;
         const rec = recommendNextSet(liveE1RM(ex), coach.profile, {
           state: sessionStateOf(ex),
@@ -746,27 +789,51 @@ export function WorkoutSession({
                   />
                 </button>
                 <p className="text-xs text-muted">{ex.muscleName}</p>
-                {prev && prev.length > 0 && (
-                  <p className="mt-0.5 truncate text-xs text-muted">
-                    Letztes Mal:{" "}
-                    <span className="font-mono tabular-nums text-foreground/70">
-                      {isTime
-                        ? prev
-                            .map((p) => `${p.durationSec ?? 0}s`)
-                            .join(", ")
-                        : prev.map((p) => `${p.weight}×${p.reps}`).join(", ")}
-                    </span>
+                {isCollapsed ? (
+                  <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-success">
+                    <CheckCircle2 className="size-3.5 shrink-0" />
+                    {setsDone} {setsDone === 1 ? "Satz" : "Sätze"} erledigt
+                    {!isTime && topW > 0 ? ` · ${topW} kg` : ""}
                   </p>
+                ) : (
+                  prev &&
+                  prev.length > 0 && (
+                    <p className="mt-0.5 truncate text-xs text-muted">
+                      Letztes Mal:{" "}
+                      <span className="font-mono tabular-nums text-foreground/70">
+                        {isTime
+                          ? prev.map((p) => `${p.durationSec ?? 0}s`).join(", ")
+                          : prev.map((p) => `${p.weight}×${p.reps}`).join(", ")}
+                      </span>
+                    </p>
+                  )
                 )}
               </div>
-              <button
-                onClick={() => handleRemoveExercise(ex.id)}
-                className="-mr-2 flex size-11 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-danger active:bg-surface-2"
-                aria-label="Übung entfernen"
-              >
-                <Trash2 className="size-5" />
-              </button>
+              <div className="flex shrink-0 items-center">
+                <button
+                  onClick={() => toggleCollapse(ex.id)}
+                  className="flex size-11 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-foreground active:bg-surface-2"
+                  aria-label={isCollapsed ? "Übung ausklappen" : "Übung einklappen"}
+                  aria-expanded={!isCollapsed}
+                >
+                  <ChevronDown
+                    className={cn(
+                      "size-5 transition-transform",
+                      isCollapsed && "-rotate-90",
+                    )}
+                  />
+                </button>
+                <button
+                  onClick={() => handleRemoveExercise(ex.id)}
+                  className="-mr-2 flex size-11 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-danger active:bg-surface-2"
+                  aria-label="Übung entfernen"
+                >
+                  <Trash2 className="size-5" />
+                </button>
+              </div>
             </div>
+
+            {!isCollapsed && (
 
             <div className="px-2 py-2">
               {isTime ? (
@@ -992,6 +1059,7 @@ export function WorkoutSession({
                 )}
               </div>
             </div>
+            )}
           </div>
           </Reveal>
         );

@@ -48,13 +48,16 @@ const STATUS_COLOR: Record<MuscleStatus, string> = {
 const STATUS_RANK: Record<MuscleStatus, number> = { low: 0, mid: 1, high: 2 };
 
 // Aus Sätzen je Muskel-Slug die Qualität ableiten (pro Einheit).
+// Fair pro Einheit: ein voller Übungs-Umfang (≈3 harte Sätze) gilt als gut
+// trainiert (grün). 2 Sätze = solide (gelb), 1 = nur angetippt (rot).
+// (Sekundär beteiligte Muskeln zählen mit halbem Gewicht – daher Bruchwerte.)
 export function muscleQuality(
   setsByMuscle: Record<string, number>,
 ): Record<string, MuscleStatus> {
   const out: Record<string, MuscleStatus> = {};
   for (const [slug, sets] of Object.entries(setsByMuscle)) {
     if (sets <= 0) continue;
-    out[slug] = sets >= 5 ? "high" : sets >= 3 ? "mid" : "low";
+    out[slug] = sets >= 3 ? "high" : sets >= 1.5 ? "mid" : "low";
   }
   return out;
 }

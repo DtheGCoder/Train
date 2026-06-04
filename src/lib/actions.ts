@@ -24,6 +24,7 @@ import {
   type CoachLogKind,
 } from "@/lib/coach-program";
 import {
+  e1rm,
   e1rmRpe,
   repRange,
   analyzeExerciseHistory,
@@ -369,19 +370,119 @@ export async function addExerciseToWorkout(
     data: { workoutId, exerciseId, position: count },
     include: { exercise: { include: { primaryMuscle: true, equipment: true } } },
   });
-  // Körpergewichtsübung: Gewicht mit dem Körpergewicht vorbelegen.
-  let weight = 0;
-  if (we.exercise.equipment?.slug === "bodyweight") {
-    const settings = await db.settings.findUnique({
-      where: { userId: user.id },
-      select: { bodyweightKg: true },
-    });
-    weight = settings?.bodyweightKg ?? 0;
+
+  // Langzeit-Gedächtnis des Coaches: letzte Einheit + Verlauf dieser Übung.
+  const memory = await exerciseMemory(user.id, exerciseId);
+
+  // Sätze wie beim letzten Mal vorbelegen. Gibt es keine Historie:
+  // Körpergewichtsübung mit Körpergewicht, sonst ein leerer Satz.
+  let createdSets;
+  if (memory.previous.length > 0) {
+    createdSets = [];
+    let n = 0;
+    for (const ps of memory.previous) {
+      n += 1;
+      createdSets.push(
+        await db.workoutSet.create({
+          data: {
+            workoutExerciseId: we.id,
+            setNumber: n,
+            weight: ps.weight,
+            reps: ps.reps,
+            durationSec: ps.durationSec,
+          },
+        }),
+      );
+    }
+  } else {
+    let weight = 0;
+    if (we.exercise.equipment?.slug === "bodyweight") {
+      const settings = await db.settings.findUnique({
+        where: { userId: user.id },
+        select: { bodyweightKg: true },
+      });
+      weight = settings?.bodyweightKg ?? 0;
+    }
+    createdSets = [
+      await db.workoutSet.create({
+        data: { workoutExerciseId: we.id, setNumber: 1, weight },
+      }),
+    ];
   }
-  const set = await db.workoutSet.create({
-    data: { workoutExerciseId: we.id, setNumber: 1, weight },
+
+  return {
+    ...we,
+    sets: createdSets,
+    baseline: memory.baseline,
+    previous: memory.previous,
+    history: { sessions: memory.sessions },
+  };
+}
+
+// Langzeit-Gedächtnis je Übung: bestes geschätztes 1RM (Baseline), die Sätze
+// der letzten Einheit (zum Vorbelegen) und der Verlauf (für Trend/Plateau).
+// Über ALLE beendeten Workouts des Nutzers – egal wann oder in welchem Plan.
+async function exerciseMemory(userId: string, exerciseId: string) {
+  const wes = await db.workoutExercise.findMany({
+    where: {
+      exerciseId,
+      workout: { userId, finishedAt: { not: null } },
+    },
+    orderBy: { workout: { startedAt: "desc" } },
+    take: 10,
+    include: {
+      sets: { where: { isCompleted: true }, orderBy: { setNumber: "asc" } },
+      workout: { select: { startedAt: true } },
+    },
   });
-  return { ...we, sets: [set] };
+
+  const lastWithSets = wes.find((w) => w.sets.length > 0);
+  const previous = lastWithSets
+    ? lastWithSets.sets.map((s) => ({
+        weight: s.weight,
+        reps: s.reps,
+        durationSec: s.durationSec,
+      }))
+    : [];
+
+  // Verlauf chronologisch aufsteigend, je Einheit verdichtet.
+  const sessions = wes
+    .filter((w) => w.sets.length > 0)
+    .map((w) => {
+      const working = w.sets.filter(
+        (s) => s.setType !== "warmup" && s.weight > 0 && s.reps > 0,
+      );
+      let best = 0;
+      let topWeight = 0;
+      let topReps = 0;
+      for (const s of working) {
+        const v = e1rm(s.weight, s.reps);
+        if (v > best) best = v;
+        if (s.weight > topWeight) {
+          topWeight = s.weight;
+          topReps = s.reps;
+        }
+      }
+      return {
+        date: w.workout.startedAt.toISOString(),
+        bestE1RM: Math.round(best * 10) / 10,
+        topWeight,
+        topReps,
+        workSets: working.length,
+      };
+    })
+    .filter((s) => s.bestE1RM > 0)
+    .reverse();
+
+  const pr = await db.personalRecord.findFirst({
+    where: { userId, exerciseId, recordType: "1rm" },
+    orderBy: { value: "desc" },
+    select: { value: true },
+  });
+  let baseline = pr?.value ?? 0;
+  for (const s of sessions) baseline = Math.max(baseline, s.bestE1RM);
+
+  return { baseline, previous, sessions };
 }
 
 export async function removeWorkoutExercise(workoutExerciseId: string) {

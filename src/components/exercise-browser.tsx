@@ -14,6 +14,7 @@ export type ExerciseItem = {
   nameEn: string;
   muscleSlug: string;
   muscleName: string;
+  secondarySlugs?: string[];
   equipmentSlug: string | null;
   equipmentName: string | null;
   mechanic: string;
