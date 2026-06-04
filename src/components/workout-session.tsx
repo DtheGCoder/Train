@@ -22,6 +22,8 @@ import {
   ArrowRight,
   Info,
   Sparkles,
+  Play,
+  Square,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
@@ -186,6 +188,18 @@ export function WorkoutSession({
   useEffect(() => {
     void ensureServiceWorker();
   }, []);
+
+  // Stoppuhr für Zeit-Übungen (Plank etc.): genau ein Satz läuft zugleich.
+  // Auf Basis eines Start-Zeitstempels → korrekt auch bei Hintergrund/Display-aus.
+  const [timing, setTiming] = useState<{ setId: string; startAt: number } | null>(
+    null,
+  );
+  const [nowTick, setNowTick] = useState(0);
+  useEffect(() => {
+    if (!timing) return;
+    const t = setInterval(() => setNowTick(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [timing]);
 
   useEffect(() => {
     // Beim Beenden einfrieren: kein Interval mehr, der Wert bleibt stehen.
@@ -826,19 +840,74 @@ export function WorkoutSession({
                       className="h-10 w-full rounded-md border border-border bg-surface-2 px-2 text-center text-base outline-none focus:border-primary"
                     />
                     {isTime ? (
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        defaultValue={s.durationSec || ""}
-                        placeholder={p ? String(p.durationSec ?? 0) : "0"}
-                        title="Dauer in Sekunden"
-                        onBlur={(e) =>
-                          patchSet(ex.id, s.id, {
-                            durationSec: parseInt(e.target.value) || 0,
-                          })
-                        }
-                        className="h-10 w-full rounded-md border border-border bg-surface-2 px-2 text-center text-base outline-none focus:border-primary"
-                      />
+                      (() => {
+                        const running = timing?.setId === s.id;
+                        const liveSecs = running
+                          ? Math.max(
+                              0,
+                              Math.round((nowTick - timing!.startAt) / 1000),
+                            )
+                          : 0;
+                        return (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                if (running && timing) {
+                                  // Stop: gemessene Dauer übernehmen + Satz abschließen.
+                                  const secs = Math.max(
+                                    1,
+                                    Math.round(
+                                      (Date.now() - timing.startAt) / 1000,
+                                    ),
+                                  );
+                                  setTiming(null);
+                                  patchSet(ex.id, s.id, { durationSec: secs });
+                                  if (!s.isCompleted) {
+                                    toggleComplete(ex, { ...s, durationSec: secs });
+                                  }
+                                } else {
+                                  // Start: Zeitstempel setzen (nur ein Satz zugleich).
+                                  const now = Date.now();
+                                  setNowTick(now);
+                                  setTiming({ setId: s.id, startAt: now });
+                                }
+                              }}
+                              className={cn(
+                                "flex size-9 shrink-0 items-center justify-center rounded-md active:scale-95",
+                                running
+                                  ? "bg-danger text-white"
+                                  : "bg-primary/15 text-primary",
+                              )}
+                              aria-label={running ? "Stoppen" : "Zeit starten"}
+                            >
+                              {running ? (
+                                <Square className="size-4" />
+                              ) : (
+                                <Play className="size-4" />
+                              )}
+                            </button>
+                            {running ? (
+                              <span className="min-w-0 flex-1 text-center font-mono text-base font-bold tabular-nums text-foreground">
+                                {formatDuration(liveSecs)}
+                              </span>
+                            ) : (
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                defaultValue={s.durationSec || ""}
+                                placeholder={p ? String(p.durationSec ?? 0) : "0"}
+                                title="Dauer in Sekunden (oder Start tippen)"
+                                onBlur={(e) =>
+                                  patchSet(ex.id, s.id, {
+                                    durationSec: parseInt(e.target.value) || 0,
+                                  })
+                                }
+                                className="h-10 w-full min-w-0 rounded-md border border-border bg-surface-2 px-1 text-center text-base outline-none focus:border-primary"
+                              />
+                            )}
+                          </div>
+                        );
+                      })()
                     ) : (
                       <input
                         type="number"
