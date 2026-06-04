@@ -13,6 +13,7 @@ import {
   Gauge,
   CalendarDays,
   Award,
+  Crown,
   User,
   Sparkles,
   CheckCheck,
@@ -30,6 +31,7 @@ const ICON: Record<string, typeof Apple> = {
   calendar: CalendarDays,
   dumbbell: Dumbbell,
   award: Award,
+  crown: Crown,
   user: User,
 };
 

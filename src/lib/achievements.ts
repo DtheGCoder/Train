@@ -83,79 +83,319 @@ export type Achievement = {
 
 const t = 1000;
 
+// Zahl-/Einheiten-Formatierung für generierte Titel & Beschreibungen.
+const de = (n: number) => n.toLocaleString("de-DE");
+const kg = (g: number) => (g >= t ? `${de(g / t)} t` : `${g} kg`);
+const liter = (g: number) => (g >= t ? `${de(g / t)} l` : `${g} ml`);
+// Linearer Punkte-Generator: Tier-Index → Belohnungspunkte (moderat gehalten).
+const lin = (start: number, step: number) => (i: number) => start + i * step;
+
+// Eine "Familie" gestufter Achievements (z. B. 1/5/10/… Workouts) kompakt
+// erzeugen. Stabile ids als `${base}-${goal}` – Löschen/Neu­berechnen ist
+// dadurch deterministisch und kollisionsfrei.
+type Fam = {
+  base: string;
+  category: AchCategory;
+  icon: string | ((i: number, last: boolean) => string);
+  unit?: string;
+  value: (s: Stats) => number;
+  goals: number[];
+  points: (i: number) => number;
+  title: (g: number) => string;
+  desc: (g: number) => string;
+};
+
+function fam(f: Fam): Achievement[] {
+  return f.goals.map((goal, i) => ({
+    id: `${f.base}-${goal}`,
+    category: f.category,
+    title: f.title(goal),
+    desc: f.desc(goal),
+    icon:
+      typeof f.icon === "function"
+        ? f.icon(i, i === f.goals.length - 1)
+        : f.icon,
+    points: f.points(i),
+    goal,
+    unit: f.unit,
+    value: f.value,
+  }));
+}
+
 export const ACHIEVEMENTS: Achievement[] = [
-  // ---------- Dranbleiben ----------
-  { id: "first", category: "consistency", title: "Aller Anfang", desc: "Schließe dein erstes Workout ab.", icon: "play", points: 10, goal: 1, unit: "Workouts", value: (s) => s.workouts },
-  { id: "wo10", category: "consistency", title: "Warmgelaufen", desc: "10 Workouts abgeschlossen.", icon: "dumbbell", points: 20, goal: 10, unit: "Workouts", value: (s) => s.workouts },
-  { id: "wo25", category: "consistency", title: "Routine drin", desc: "25 Workouts abgeschlossen.", icon: "dumbbell", points: 40, goal: 25, unit: "Workouts", value: (s) => s.workouts },
-  { id: "wo50", category: "consistency", title: "Eiserner Wille", desc: "50 Workouts abgeschlossen.", icon: "dumbbell", points: 70, goal: 50, unit: "Workouts", value: (s) => s.workouts },
-  { id: "wo100", category: "consistency", title: "Hundert!", desc: "100 Workouts abgeschlossen.", icon: "trophy", points: 120, goal: 100, unit: "Workouts", value: (s) => s.workouts },
-  { id: "wo250", category: "consistency", title: "Legende", desc: "250 Workouts abgeschlossen.", icon: "crown", points: 200, goal: 250, unit: "Workouts", value: (s) => s.workouts },
-  { id: "streak3", category: "consistency", title: "Drei am Stück", desc: "An 3 Tagen in Folge trainiert.", icon: "flame", points: 15, goal: 3, unit: "Tage", value: (s) => s.streakDays },
-  { id: "streak7", category: "consistency", title: "Ganze Woche", desc: "An 7 Tagen in Folge trainiert.", icon: "flame", points: 40, goal: 7, unit: "Tage", value: (s) => s.streakDays },
-  { id: "weeks4", category: "consistency", title: "Monat durchgezogen", desc: "4 Wochen in Folge mindestens 1 Einheit.", icon: "calendar", points: 50, goal: 4, unit: "Wochen", value: (s) => s.streakWeeks },
-  { id: "weeks12", category: "consistency", title: "Dauerbrenner", desc: "12 Wochen in Folge trainiert.", icon: "calendar", points: 110, goal: 12, unit: "Wochen", value: (s) => s.streakWeeks },
-  { id: "days30", category: "consistency", title: "30 Trainingstage", desc: "An 30 verschiedenen Tagen trainiert.", icon: "calendar", points: 30, goal: 30, unit: "Tage", value: (s) => s.days },
-  { id: "days100", category: "consistency", title: "100 Trainingstage", desc: "An 100 verschiedenen Tagen trainiert.", icon: "calendar", points: 90, goal: 100, unit: "Tage", value: (s) => s.days },
+  // ---------- Dranbleiben: Workouts ----------
+  ...fam({
+    base: "wo",
+    category: "consistency",
+    icon: (i, last) =>
+      i === 0 ? "play" : last ? "crown" : i >= 9 ? "trophy" : "dumbbell",
+    unit: "Workouts",
+    value: (s) => s.workouts,
+    goals: [1, 3, 5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500, 750, 1000],
+    points: lin(10, 7),
+    title: (g) => (g === 1 ? "Erstes Workout" : `${de(g)} Workouts`),
+    desc: (g) =>
+      g === 1
+        ? "Schließe dein erstes Workout ab."
+        : `Schließe ${de(g)} Workouts ab.`,
+  }),
 
-  // ---------- Volumen ----------
-  { id: "vol1", category: "volume", title: "Erste Tonne", desc: "1.000 kg Gesamtvolumen bewegt.", icon: "weight", points: 10, goal: 1 * t, unit: "kg", value: (s) => s.volume },
-  { id: "vol10", category: "volume", title: "10 Tonnen", desc: "10.000 kg Gesamtvolumen bewegt.", icon: "weight", points: 25, goal: 10 * t, unit: "kg", value: (s) => s.volume },
-  { id: "vol50", category: "volume", title: "50 Tonnen", desc: "50.000 kg Gesamtvolumen bewegt.", icon: "weight", points: 60, goal: 50 * t, unit: "kg", value: (s) => s.volume },
-  { id: "vol100", category: "volume", title: "100 Tonnen", desc: "100.000 kg Gesamtvolumen bewegt.", icon: "weight", points: 100, goal: 100 * t, unit: "kg", value: (s) => s.volume },
-  { id: "vol250", category: "volume", title: "Viertelmillion", desc: "250.000 kg Gesamtvolumen bewegt.", icon: "weight", points: 160, goal: 250 * t, unit: "kg", value: (s) => s.volume },
-  { id: "vol500", category: "volume", title: "Halbe Million", desc: "500.000 kg Gesamtvolumen bewegt.", icon: "weight", points: 220, goal: 500 * t, unit: "kg", value: (s) => s.volume },
-  { id: "bigday5", category: "volume", title: "Großer Tag", desc: "5.000 kg in einer einzigen Einheit.", icon: "zap", points: 30, goal: 5 * t, unit: "kg", value: (s) => s.maxWorkoutVolume },
-  { id: "bigday10", category: "volume", title: "Monster-Session", desc: "10.000 kg in einer einzigen Einheit.", icon: "zap", points: 60, goal: 10 * t, unit: "kg", value: (s) => s.maxWorkoutVolume },
+  // ---------- Dranbleiben: Trainingstage ----------
+  ...fam({
+    base: "days",
+    category: "consistency",
+    icon: (i, last) => (last ? "crown" : i >= 8 ? "trophy" : "calendar"),
+    unit: "Tage",
+    value: (s) => s.days,
+    goals: [5, 10, 20, 30, 50, 75, 100, 150, 200, 250, 365, 500, 730],
+    points: lin(12, 8),
+    title: (g) => `${de(g)} Trainingstage`,
+    desc: (g) => `Trainiere an ${de(g)} verschiedenen Tagen.`,
+  }),
 
-  // ---------- Fleiß ----------
-  { id: "sets100", category: "effort", title: "100 Sätze", desc: "100 harte Sätze absolviert.", icon: "list", points: 15, goal: 100, unit: "Sätze", value: (s) => s.sets },
-  { id: "sets1000", category: "effort", title: "1.000 Sätze", desc: "1.000 harte Sätze absolviert.", icon: "list", points: 50, goal: 1000, unit: "Sätze", value: (s) => s.sets },
-  { id: "sets5000", category: "effort", title: "5.000 Sätze", desc: "5.000 harte Sätze absolviert.", icon: "list", points: 120, goal: 5000, unit: "Sätze", value: (s) => s.sets },
-  { id: "reps1000", category: "effort", title: "1.000 Wiederholungen", desc: "Insgesamt 1.000 Wiederholungen.", icon: "repeat", points: 15, goal: 1000, unit: "Wdh", value: (s) => s.reps },
-  { id: "reps10000", category: "effort", title: "10.000 Wiederholungen", desc: "Insgesamt 10.000 Wiederholungen.", icon: "repeat", points: 60, goal: 10000, unit: "Wdh", value: (s) => s.reps },
-  { id: "reps50000", category: "effort", title: "50.000 Wiederholungen", desc: "Insgesamt 50.000 Wiederholungen.", icon: "repeat", points: 140, goal: 50000, unit: "Wdh", value: (s) => s.reps },
+  // ---------- Dranbleiben: Tages-Serie ----------
+  ...fam({
+    base: "streakd",
+    category: "consistency",
+    icon: "flame",
+    unit: "Tage",
+    value: (s) => s.streakDays,
+    goals: [2, 3, 5, 7, 10, 14, 21, 30, 50, 75, 100],
+    points: lin(10, 9),
+    title: (g) => `${g} Tage am Stück`,
+    desc: (g) => `Trainiere an ${g} Tagen in Folge.`,
+  }),
+
+  // ---------- Dranbleiben: Wochen-Serie ----------
+  ...fam({
+    base: "streakw",
+    category: "consistency",
+    icon: (i, last) => (last ? "crown" : "calendar"),
+    unit: "Wochen",
+    value: (s) => s.streakWeeks,
+    goals: [2, 4, 6, 8, 12, 16, 26, 40, 52],
+    points: lin(20, 18),
+    title: (g) => `${g} Wochen-Serie`,
+    desc: (g) => `Trainiere ${g} Wochen in Folge mindestens einmal.`,
+  }),
+
+  // ---------- Volumen: gesamt ----------
+  ...fam({
+    base: "vol",
+    category: "volume",
+    icon: (i, last) => (last ? "crown" : i >= 10 ? "trophy" : "weight"),
+    unit: "kg",
+    value: (s) => s.volume,
+    goals: [
+      1 * t, 5 * t, 10 * t, 25 * t, 50 * t, 100 * t, 150 * t, 250 * t, 500 * t,
+      750 * t, 1000 * t, 2000 * t, 5000 * t,
+    ],
+    points: lin(10, 12),
+    title: (g) => `${kg(g)} Volumen`,
+    desc: (g) => `Bewege insgesamt ${de(g)} kg.`,
+  }),
+
+  // ---------- Volumen: einzelne Einheit ----------
+  ...fam({
+    base: "bigday",
+    category: "volume",
+    icon: "zap",
+    unit: "kg",
+    value: (s) => s.maxWorkoutVolume,
+    goals: [3000, 5000, 7500, 10000, 12500, 15000, 20000],
+    points: lin(20, 12),
+    title: (g) => `${kg(g)} an einem Tag`,
+    desc: (g) => `Bewege ${de(g)} kg in einer einzigen Einheit.`,
+  }),
+
+  // ---------- Fleiß: Sätze ----------
+  ...fam({
+    base: "sets",
+    category: "effort",
+    icon: "list",
+    unit: "Sätze",
+    value: (s) => s.sets,
+    goals: [50, 100, 250, 500, 1000, 2500, 5000, 7500, 10000, 20000],
+    points: lin(10, 11),
+    title: (g) => `${de(g)} Sätze`,
+    desc: (g) => `Absolviere ${de(g)} harte Sätze.`,
+  }),
+
+  // ---------- Fleiß: Wiederholungen ----------
+  ...fam({
+    base: "reps",
+    category: "effort",
+    icon: "repeat",
+    unit: "Wdh",
+    value: (s) => s.reps,
+    goals: [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000, 200000, 500000],
+    points: lin(10, 11),
+    title: (g) => `${de(g)} Wiederholungen`,
+    desc: (g) => `Sammle insgesamt ${de(g)} Wiederholungen.`,
+  }),
+
+  // ---------- Fleiß: Marathon-Einheiten ----------
+  ...fam({
+    base: "long",
+    category: "effort",
+    icon: "list",
+    unit: "×",
+    value: (s) => s.longWorkouts,
+    goals: [1, 5, 10, 25, 50],
+    points: lin(20, 14),
+    title: (g) => (g === 1 ? "Marathon-Einheit" : `${g}× Marathon-Einheit`),
+    desc: (g) =>
+      `Absolviere ${g} Einheit${g === 1 ? "" : "en"} mit 20+ Arbeitssätzen.`,
+  }),
+
+  // ---------- Fleiß: Sätze in einer Einheit ----------
+  ...fam({
+    base: "maxsets",
+    category: "effort",
+    icon: "zap",
+    unit: "Sätze",
+    value: (s) => s.maxSetsWorkout,
+    goals: [15, 20, 25, 30, 40],
+    points: lin(15, 12),
+    title: (g) => `${g} Sätze in einer Einheit`,
+    desc: (g) => `Schaffe ${g} Arbeitssätze in einer einzigen Einheit.`,
+  }),
 
   // ---------- Stärke ----------
-  { id: "str60", category: "strength", title: "Solide Basis", desc: "Geschätztes 1RM von 60 kg erreicht.", icon: "trending-up", points: 20, goal: 60, unit: "kg", value: (s) => s.best1rm },
-  { id: "str100", category: "strength", title: "Dreistellig", desc: "Geschätztes 1RM von 100 kg erreicht.", icon: "trending-up", points: 55, goal: 100, unit: "kg", value: (s) => s.best1rm },
-  { id: "str140", category: "strength", title: "Schwergewicht", desc: "Geschätztes 1RM von 140 kg erreicht.", icon: "trending-up", points: 95, goal: 140, unit: "kg", value: (s) => s.best1rm },
-  { id: "str180", category: "strength", title: "Kraftpaket", desc: "Geschätztes 1RM von 180 kg erreicht.", icon: "trending-up", points: 150, goal: 180, unit: "kg", value: (s) => s.best1rm },
+  ...fam({
+    base: "str",
+    category: "strength",
+    icon: (i, last) => (last ? "crown" : "trending-up"),
+    unit: "kg",
+    value: (s) => s.best1rm,
+    goals: [40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 250, 300],
+    points: lin(15, 16),
+    title: (g) => `1RM ${g} kg`,
+    desc: (g) => `Erreiche ein geschätztes 1RM von ${g} kg.`,
+  }),
 
-  // ---------- Vielfalt ----------
-  { id: "ex5", category: "variety", title: "Neugierig", desc: "5 verschiedene Übungen ausprobiert.", icon: "shuffle", points: 10, goal: 5, unit: "Übungen", value: (s) => s.exercises },
-  { id: "ex20", category: "variety", title: "Abwechslung", desc: "20 verschiedene Übungen ausprobiert.", icon: "shuffle", points: 30, goal: 20, unit: "Übungen", value: (s) => s.exercises },
-  { id: "ex50", category: "variety", title: "Übungs-Sammler", desc: "50 verschiedene Übungen ausprobiert.", icon: "shuffle", points: 70, goal: 50, unit: "Übungen", value: (s) => s.exercises },
-  { id: "allgroups", category: "variety", title: "Ganzkörper", desc: "Alle 6 Hauptmuskelgruppen trainiert.", icon: "layers", points: 40, goal: 6, unit: "Gruppen", value: (s) => s.mainGroups },
+  // ---------- Vielfalt: Übungen ----------
+  ...fam({
+    base: "ex",
+    category: "variety",
+    icon: "shuffle",
+    unit: "Übungen",
+    value: (s) => s.exercises,
+    goals: [3, 5, 10, 20, 30, 50, 75, 100, 150, 200],
+    points: lin(10, 12),
+    title: (g) => `${de(g)} Übungen`,
+    desc: (g) => `Probiere ${de(g)} verschiedene Übungen aus.`,
+  }),
 
-  { id: "ex100", category: "variety", title: "Übungs-Enzyklopädie", desc: "100 verschiedene Übungen ausprobiert.", icon: "shuffle", points: 130, goal: 100, unit: "Übungen", value: (s) => s.exercises },
-  { id: "str220", category: "strength", title: "Rohe Gewalt", desc: "Geschätztes 1RM von 220 kg erreicht.", icon: "trending-up", points: 200, goal: 220, unit: "kg", value: (s) => s.best1rm },
-  { id: "vol1000", category: "volume", title: "Eine Million", desc: "1.000.000 kg Gesamtvolumen bewegt.", icon: "weight", points: 300, goal: 1000 * t, unit: "kg", value: (s) => s.volume },
+  // ---------- Vielfalt: Muskelgruppen ----------
+  ...fam({
+    base: "groups",
+    category: "variety",
+    icon: "layers",
+    unit: "Gruppen",
+    value: (s) => s.mainGroups,
+    goals: [3, 6],
+    points: lin(20, 25),
+    title: (g) => (g >= 6 ? "Ganzkörper" : `${g} Muskelgruppen`),
+    desc: (g) =>
+      g >= 6
+        ? "Trainiere alle 6 Hauptmuskelgruppen."
+        : `Trainiere ${g} verschiedene Hauptmuskelgruppen.`,
+  }),
 
-  // ---------- Fleiß (Umfang) ----------
-  { id: "long1", category: "effort", title: "Marathon-Einheit", desc: "Eine Einheit mit 20+ Arbeitssätzen.", icon: "list", points: 25, goal: 1, unit: "×", value: (s) => s.longWorkouts },
-  { id: "long10", category: "effort", title: "Volumen-Tier", desc: "10 Einheiten mit 20+ Arbeitssätzen.", icon: "list", points: 70, goal: 10, unit: "×", value: (s) => s.longWorkouts },
-  { id: "days365", category: "consistency", title: "Ein Jahr Eisen", desc: "An 365 verschiedenen Tagen trainiert.", icon: "crown", points: 300, goal: 365, unit: "Tage", value: (s) => s.days },
-  { id: "weeks26", category: "consistency", title: "Halbjahres-Streak", desc: "26 Wochen in Folge trainiert.", icon: "flame", points: 200, goal: 26, unit: "Wochen", value: (s) => s.streakWeeks },
+  // ---------- Besonderes: früh ----------
+  ...fam({
+    base: "early",
+    category: "special",
+    icon: "sunrise",
+    unit: "×",
+    value: (s) => s.earlyWorkouts,
+    goals: [1, 3, 5, 10, 25, 50],
+    points: lin(15, 10),
+    title: (g) => (g === 1 ? "Frühaufsteher" : `${g}× vor 7 Uhr`),
+    desc: (g) => `Starte ${g} Workout${g === 1 ? "" : "s"} vor 7 Uhr morgens.`,
+  }),
 
-  // ---------- Besonderes ----------
-  { id: "early1", category: "special", title: "Frühaufsteher", desc: "Ein Workout vor 7 Uhr gestartet.", icon: "sunrise", points: 20, goal: 1, unit: "×", value: (s) => s.earlyWorkouts },
-  { id: "early5", category: "special", title: "Morgenmensch", desc: "5 Workouts vor 7 Uhr gestartet.", icon: "sunrise", points: 45, goal: 5, unit: "×", value: (s) => s.earlyWorkouts },
-  { id: "late1", category: "special", title: "Nachteule", desc: "Ein Workout nach 21 Uhr gestartet.", icon: "moon", points: 20, goal: 1, unit: "×", value: (s) => s.lateWorkouts },
-  { id: "late10", category: "special", title: "Mitternachts-Pumper", desc: "10 Workouts nach 21 Uhr gestartet.", icon: "moon", points: 45, goal: 10, unit: "×", value: (s) => s.lateWorkouts },
-  { id: "weekend10", category: "special", title: "Wochenend-Krieger", desc: "10 Workouts am Wochenende.", icon: "star", points: 35, goal: 10, unit: "×", value: (s) => s.weekendWorkouts },
-  { id: "weekend30", category: "special", title: "Keine Pause kennt er", desc: "30 Workouts am Wochenende.", icon: "star", points: 80, goal: 30, unit: "×", value: (s) => s.weekendWorkouts },
+  // ---------- Besonderes: spät ----------
+  ...fam({
+    base: "late",
+    category: "special",
+    icon: "moon",
+    unit: "×",
+    value: (s) => s.lateWorkouts,
+    goals: [1, 3, 5, 10, 25],
+    points: lin(15, 10),
+    title: (g) => (g === 1 ? "Nachteule" : `${g}× nach 21 Uhr`),
+    desc: (g) => `Starte ${g} Workout${g === 1 ? "" : "s"} nach 21 Uhr.`,
+  }),
 
-  // ---------- Ernährung ----------
-  { id: "nutri-first", category: "nutrition", title: "Mitgeschrieben", desc: "Erstes Lebensmittel protokolliert.", icon: "apple", points: 10, goal: 1, unit: "Einträge", value: (s) => s.foodEntries },
-  { id: "nutri100", category: "nutrition", title: "Tracking-Profi", desc: "100 Lebensmittel protokolliert.", icon: "apple", points: 45, goal: 100, unit: "Einträge", value: (s) => s.foodEntries },
-  { id: "nutri500", category: "nutrition", title: "Buchhalter des Tellers", desc: "500 Lebensmittel protokolliert.", icon: "apple", points: 110, goal: 500, unit: "Einträge", value: (s) => s.foodEntries },
-  { id: "nutriday7", category: "nutrition", title: "Tracking-Woche", desc: "An 7 Tagen Ernährung protokolliert.", icon: "calendar", points: 25, goal: 7, unit: "Tage", value: (s) => s.loggedDays },
-  { id: "nutriday30", category: "nutrition", title: "Tracking-Monat", desc: "An 30 Tagen Ernährung protokolliert.", icon: "calendar", points: 70, goal: 30, unit: "Tage", value: (s) => s.loggedDays },
-  { id: "protein150", category: "nutrition", title: "Protein-Tag", desc: "An einem Tag 150 g Protein protokolliert.", icon: "beef", points: 30, goal: 150, unit: "g", value: (s) => s.maxProteinDay },
-  { id: "protein200", category: "nutrition", title: "Eiweiß-Bestie", desc: "An einem Tag 200 g Protein protokolliert.", icon: "beef", points: 60, goal: 200, unit: "g", value: (s) => s.maxProteinDay },
-  { id: "water3l", category: "nutrition", title: "Gut hydriert", desc: "An einem Tag 3 Liter Wasser getrackt.", icon: "droplet", points: 20, goal: 3000, unit: "ml", value: (s) => s.maxWaterMl },
-  { id: "water4l", category: "nutrition", title: "Wasserfall", desc: "An einem Tag 4 Liter Wasser getrackt.", icon: "droplet", points: 40, goal: 4000, unit: "ml", value: (s) => s.maxWaterMl },
+  // ---------- Besonderes: Wochenende ----------
+  ...fam({
+    base: "weekend",
+    category: "special",
+    icon: "star",
+    unit: "×",
+    value: (s) => s.weekendWorkouts,
+    goals: [1, 5, 10, 25, 50, 100, 150],
+    points: lin(12, 9),
+    title: (g) => (g === 1 ? "Wochenend-Start" : `${g}× am Wochenende`),
+    desc: (g) => `Absolviere ${g} Workout${g === 1 ? "" : "s"} am Wochenende.`,
+  }),
+
+  // ---------- Ernährung: Einträge ----------
+  ...fam({
+    base: "nutri",
+    category: "nutrition",
+    icon: "apple",
+    unit: "Einträge",
+    value: (s) => s.foodEntries,
+    goals: [1, 10, 50, 100, 250, 500, 1000, 2500, 5000],
+    points: lin(10, 11),
+    title: (g) => (g === 1 ? "Erster Eintrag" : `${de(g)} Lebensmittel`),
+    desc: (g) =>
+      g === 1
+        ? "Protokolliere dein erstes Lebensmittel."
+        : `Protokolliere ${de(g)} Lebensmittel.`,
+  }),
+
+  // ---------- Ernährung: getrackte Tage ----------
+  ...fam({
+    base: "nutriday",
+    category: "nutrition",
+    icon: "calendar",
+    unit: "Tage",
+    value: (s) => s.loggedDays,
+    goals: [3, 7, 14, 30, 60, 100, 200, 365],
+    points: lin(12, 9),
+    title: (g) => `${de(g)} Tage getrackt`,
+    desc: (g) => `Protokolliere an ${de(g)} Tagen deine Ernährung.`,
+  }),
+
+  // ---------- Ernährung: Protein an einem Tag ----------
+  ...fam({
+    base: "protein",
+    category: "nutrition",
+    icon: "beef",
+    unit: "g",
+    value: (s) => s.maxProteinDay,
+    goals: [100, 125, 150, 175, 200, 250, 300, 350],
+    points: lin(15, 8),
+    title: (g) => `${g} g Protein`,
+    desc: (g) => `Protokolliere ${g} g Protein an einem Tag.`,
+  }),
+
+  // ---------- Ernährung: Wasser an einem Tag ----------
+  ...fam({
+    base: "water",
+    category: "nutrition",
+    icon: "droplet",
+    unit: "ml",
+    value: (s) => s.maxWaterMl,
+    goals: [2000, 2500, 3000, 3500, 4000, 5000],
+    points: lin(12, 7),
+    title: (g) => `${liter(g)} Wasser`,
+    desc: (g) => `Tracke ${liter(g)} Wasser an einem Tag.`,
+  }),
 ];
 
 export type AchProgress = {

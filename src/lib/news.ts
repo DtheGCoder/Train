@@ -30,6 +30,29 @@ export type NewsItem = {
 
 export const NEWS: NewsItem[] = [
   {
+    id: "2026-06-06-more-achievements-titles",
+    date: "2026-06-06",
+    kind: "update",
+    category: "Update",
+    title: "Massiv mehr Achievements & Titel",
+    summary:
+      "Die Achievements wurden mehr als verdreifacht (jetzt über 170) und der Titel-Tab auf über 90 Titel erweitert – mit vielen neuen Stufen in jeder Kategorie.",
+    highlights: [
+      {
+        icon: "award",
+        title: "Über 170 Achievements",
+        text: "Mehr als das Dreifache von vorher: feinere Stufen für Workouts, Trainingstage, Serien, Volumen, Sätze, Wiederholungen, Stärke, Vielfalt, Besonderes und Ernährung. Jede Stufe bringt Belohnungspunkte für die Bestenliste – es gibt also fast immer ein nächstes Ziel direkt vor dir.",
+      },
+      {
+        icon: "crown",
+        title: "Über 90 Titel",
+        text: "Der Titel-Tab ist stark gewachsen: von leicht bis legendär, dazu lustige und geheime Titel. Schalte sie frei und wähle sie im Profil – dein Titel glänzt animiert in der Bestenliste unter deinem Namen.",
+      },
+    ],
+    footer:
+      "Schau im Profil unter „Bestenliste“ in die Tabs Achievements & Titel – jede Menge neue Ziele warten auf dich.",
+  },
+  {
     id: "2026-06-05-fatloss-fooddb",
     date: "2026-06-05",
     kind: "update",
