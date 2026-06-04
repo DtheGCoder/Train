@@ -168,8 +168,9 @@ export function MuscleQualityMap({
         </div>
       )}
       <p className="mt-2 text-center text-[11px] text-muted">
-        Nur die in dieser Einheit trainierten Muskelgruppen sind eingefärbt –
-        nach Anzahl harter Sätze (≥5 grün · 3–4 gelb · 1–2 rot).
+        Nur die in dieser Einheit trainierten Muskeln sind eingefärbt – nach
+        harten Sätzen (≥3 grün · 2 gelb · 1 rot). Sekundär beteiligte Muskeln
+        zählen zur Hälfte mit.
       </p>
     </div>
   );

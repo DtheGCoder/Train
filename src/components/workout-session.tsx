@@ -26,6 +26,7 @@ import {
   Square,
   ChevronDown,
   CheckCircle2,
+  Apple,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
@@ -52,6 +53,7 @@ import {
   STATUS_LABEL,
   STATUS_COLOR,
 } from "@/lib/coach-volume";
+import { postWorkoutNutrition, type PostWorkout } from "@/lib/coach-nutrition";
 import { setTypeLabels, setTypeShort } from "@/lib/labels";
 import { formatDuration, cn } from "@/lib/utils";
 import {
@@ -700,6 +702,13 @@ export function WorkoutSession({
           sets={stats.completedSets}
           summary={finishSummary}
           status={finishStatus}
+          postWorkout={
+            coach.profile.bodyweightKg
+              ? postWorkoutNutrition(coach.profile, {
+                  hardSets: stats.completedSets,
+                })
+              : null
+          }
           defaultName={initial.name}
           fromRoutine={initial.routineId !== null}
           saving={finishSaving}
@@ -1283,6 +1292,7 @@ function FinishOverlay({
   sets,
   summary,
   status,
+  postWorkout,
   defaultName,
   fromRoutine,
   saving,
@@ -1293,6 +1303,7 @@ function FinishOverlay({
   sets: number;
   summary: WorkoutSummary | null;
   status: Record<string, MuscleStatus>;
+  postWorkout: PostWorkout | null;
   defaultName: string;
   fromRoutine: boolean;
   saving: boolean;
@@ -1375,6 +1386,32 @@ function FinishOverlay({
               className="h-11 w-full rounded-lg border border-border bg-surface-2 px-3 text-base outline-none focus:border-primary"
             />
           </div>
+
+          {/* Ernährung direkt nach dem Training */}
+          {postWorkout && (
+            <div className="mt-5 rounded-xl border border-primary/30 bg-primary/5 p-4 text-left">
+              <p className="flex items-center gap-2 text-sm font-semibold text-primary">
+                <Apple className="size-4" /> Jetzt zuführen
+              </p>
+              <div className="mt-2 flex gap-3">
+                <div className="flex-1 rounded-lg bg-surface p-2.5 text-center">
+                  <p className="text-xl font-extrabold tabular-nums text-foreground">
+                    {postWorkout.protein} g
+                  </p>
+                  <p className="text-[11px] text-muted">Protein</p>
+                </div>
+                <div className="flex-1 rounded-lg bg-surface p-2.5 text-center">
+                  <p className="text-xl font-extrabold tabular-nums text-foreground">
+                    {postWorkout.carbs} g
+                  </p>
+                  <p className="text-[11px] text-muted">Kohlenhydrate</p>
+                </div>
+              </div>
+              <p className="mt-2 text-xs leading-snug text-muted">
+                {postWorkout.text}
+              </p>
+            </div>
+          )}
 
           {/* Trainierte Muskeln (rot/gelb/grün) */}
           {Object.keys(status).length > 0 && (

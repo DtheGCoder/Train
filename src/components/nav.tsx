@@ -6,7 +6,7 @@ import {
   Dumbbell,
   Trophy,
   LayoutList,
-  BarChart3,
+  Apple,
   Play,
   CalendarDays,
   UserCog,
@@ -24,8 +24,8 @@ const items = [
   { href: "/exercises", label: "Übungen", icon: Dumbbell },
   { href: "/routines", label: "Pläne", icon: LayoutList },
   { href: "/calendar", label: "Kalender", icon: CalendarDays },
+  { href: "/nutrition", label: "Ernährung", icon: Apple },
   { href: "/leaderboard", label: "Bestenliste", icon: Trophy },
-  { href: "/stats", label: "Statistik", icon: BarChart3 },
   { href: "/analysis", label: "Analyse", icon: Activity },
 ];
 

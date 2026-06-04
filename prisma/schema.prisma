@@ -226,7 +226,26 @@ model User {
   workouts        Workout[]
   personalRecords PersonalRecord[]
   programs        Program[]
+  nutritionDays   NutritionDay[]
   settings        Settings?
+}
+
+// Ernährungs-Tagesprotokoll: abgehakte Plan-Items + manuelle Extras + Wasser.
+model NutritionDay {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  date         String // YYYY-MM-DD
+  checkedJson  String   @default("[]") // abgehakte Plan-Item-Keys
+  extraKcal    Float    @default(0)
+  extraProtein Float    @default(0)
+  extraCarbs   Float    @default(0)
+  extraFat     Float    @default(0)
+  waterMl      Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId])
 }
 
 model Session {

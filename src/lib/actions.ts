@@ -1690,3 +1690,71 @@ export async function reviewProgram(
   revalidatePath("/routines");
   return { messages };
 }
+
+/* ---------------- Ernährung ---------------- */
+
+async function ensureNutritionDay(userId: string, date: string) {
+  const existing = await db.nutritionDay.findUnique({
+    where: { userId_date: { userId, date } },
+  });
+  if (existing) return existing;
+  return db.nutritionDay.create({ data: { userId, date } });
+}
+
+// Plan-Item ab-/anhaken (Mahlzeit, Shake, Supplement).
+export async function toggleNutritionItem(date: string, key: string) {
+  const user = await requireUser();
+  const day = await ensureNutritionDay(user.id, date);
+  let checked: string[] = [];
+  try {
+    const v = JSON.parse(day.checkedJson);
+    if (Array.isArray(v)) checked = v as string[];
+  } catch {
+    checked = [];
+  }
+  checked = checked.includes(key)
+    ? checked.filter((k) => k !== key)
+    : [...checked, key];
+  await db.nutritionDay.update({
+    where: { id: day.id },
+    data: { checkedJson: JSON.stringify(checked) },
+  });
+  revalidatePath("/nutrition");
+}
+
+// Wasser hinzufügen (oder mit negativem Wert abziehen, min. 0).
+export async function addWater(date: string, ml: number) {
+  const user = await requireUser();
+  const day = await ensureNutritionDay(user.id, date);
+  await db.nutritionDay.update({
+    where: { id: day.id },
+    data: { waterMl: Math.max(0, day.waterMl + Math.round(ml)) },
+  });
+  revalidatePath("/nutrition");
+}
+
+// Manuelle Zusatz-Makros (z. B. „+ Eiweißshake" oder eine extra Mahlzeit).
+export async function addNutritionExtra(
+  date: string,
+  macros: { kcal: number; protein: number; carbs: number; fat: number },
+) {
+  const user = await requireUser();
+  const day = await ensureNutritionDay(user.id, date);
+  await db.nutritionDay.update({
+    where: { id: day.id },
+    data: {
+      extraKcal: Math.max(0, day.extraKcal + (macros.kcal || 0)),
+      extraProtein: Math.max(0, day.extraProtein + (macros.protein || 0)),
+      extraCarbs: Math.max(0, day.extraCarbs + (macros.carbs || 0)),
+      extraFat: Math.max(0, day.extraFat + (macros.fat || 0)),
+    },
+  });
+  revalidatePath("/nutrition");
+}
+
+// Tag zurücksetzen.
+export async function resetNutritionDay(date: string) {
+  const user = await requireUser();
+  await db.nutritionDay.deleteMany({ where: { userId: user.id, date } });
+  revalidatePath("/nutrition");
+}

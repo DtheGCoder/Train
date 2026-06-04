@@ -4,6 +4,8 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { PageHeader, EmptyState } from "@/components/ui";
 import { WorkoutCalendar } from "@/components/workout-calendar";
+import { CalendarTabs } from "@/components/calendar-tabs";
+import { StatsView } from "@/components/stats-view";
 import { DeleteWorkoutButton } from "@/components/delete-workout-button";
 import { formatDuration } from "@/lib/utils";
 import { format } from "date-fns";
@@ -33,10 +35,8 @@ export default async function CalendarPage() {
     ),
   }));
 
-  return (
+  const calendarTab = (
     <div className="space-y-6">
-      <PageHeader title="Kalender" subtitle="Deine Trainingstage im Überblick" />
-
       {days.length === 0 ? (
         <EmptyState
           title="Noch keine Trainingstage"
@@ -46,7 +46,6 @@ export default async function CalendarPage() {
         <WorkoutCalendar workouts={days} />
       )}
 
-      {/* Verlauf – früher ein eigener Tab, jetzt unter dem Kalender. */}
       {workouts.length > 0 && (
         <section className="space-y-3">
           <div className="flex items-baseline justify-between">
@@ -98,6 +97,13 @@ export default async function CalendarPage() {
           </ul>
         </section>
       )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      <PageHeader title="Kalender" subtitle="Trainingstage & Statistik" />
+      <CalendarTabs calendar={calendarTab} stats={<StatsView userId={user.id} />} />
     </div>
   );
 }
