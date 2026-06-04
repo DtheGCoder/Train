@@ -286,26 +286,35 @@ function ActiveProgramView({
     return d === 0 ? 7 : d;
   });
 
-  // Programm-Tage den gewählten Wochentagen zuordnen (in Reihenfolge, zyklisch).
-  const sorted = [...wd].sort((a, b) => a - b);
-  const wdToDayIdx = new Map<number, number>();
-  sorted.forEach((d, i) => wdToDayIdx.set(d, len ? i % len : 0));
-  const dayFor = (weekday: number): ActiveDay | null =>
-    wdToDayIdx.has(weekday) ? program.days[wdToDayIdx.get(weekday)!] ?? null : null;
+  // Programm-Tage werden NICHT fest an Kalender-Wochentage geklebt, sondern
+  // laufen in fester Reihenfolge weiter: der Cursor zeigt auf den nächsten
+  // fälligen Tag. Dadurch verschiebt sich alles automatisch mit – lässt du ein
+  // Training aus, rückt genau dieses Training auf den nächsten Trainingstag und
+  // alles Weitere ebenso (nichts fällt weg). Nimmst du Wochentage raus, verteilt
+  // der Coach die Trainings einfach auf die verbleibenden Tage.
+  const cursor = len ? ((program.cursor % len) + len) % len : 0;
+  const wdSet = new Set(wd);
 
-  const todayDay = dayFor(todayIso);
-  // Nächster Trainingstag ab heute (inkl. heute).
-  let nextWeekday = 0;
-  let nextDay: ActiveDay | null = null;
+  // Ab heute 7 Tage vorwärts laufen und jedem Trainings-Wochentag der Reihe nach
+  // den nächsten Programm-Tag zuordnen (cursor, cursor+1, …).
+  type Slot = { weekday: number; offset: number; day: ActiveDay | null };
+  const slots: Slot[] = [];
+  let seq = 0;
   for (let off = 0; off < 7; off++) {
     const w = ((todayIso - 1 + off) % 7) + 1;
-    const d = dayFor(w);
-    if (d) {
-      nextWeekday = w;
-      nextDay = d;
-      break;
+    let day: ActiveDay | null = null;
+    if (len && wdSet.has(w)) {
+      day = program.days[(cursor + seq) % len] ?? null;
+      seq++;
     }
+    slots.push({ weekday: w, offset: off, day });
   }
+
+  const todayDay = slots[0].day;
+  // Nächster Trainingstag ab heute (inkl. heute).
+  const nextSlot = slots.find((s) => s.day) ?? null;
+  const nextWeekday = nextSlot?.weekday ?? 0;
+  const nextDay = nextSlot?.day ?? null;
 
   const toggleWd = (d: number) => {
     const next = wd.includes(d)
@@ -388,11 +397,11 @@ function ActiveProgramView({
         )}
       </div>
 
-      {/* WOCHENPLAN */}
+      {/* WOCHENPLAN – ab heute, in Trainings-Reihenfolge (verschiebt sich mit) */}
       <div className="overflow-hidden rounded-2xl border border-border bg-surface">
         <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
           <p className="flex items-center gap-2 text-sm font-semibold">
-            <CalendarDays className="size-4 text-primary" /> Dein Wochenplan
+            <CalendarDays className="size-4 text-primary" /> Nächste 7 Tage
           </p>
           <button
             onClick={() => setEditWd((v) => !v)}
@@ -402,12 +411,13 @@ function ActiveProgramView({
           </button>
         </div>
         <ul>
-          {[1, 2, 3, 4, 5, 6, 7].map((w) => {
-            const d = dayFor(w);
-            const isToday = w === todayIso;
+          {slots.map((s) => {
+            const isToday = s.offset === 0;
+            const rel =
+              s.offset === 0 ? "Heute" : s.offset === 1 ? "Morgen" : WD_SHORT[s.weekday];
             return (
               <li
-                key={w}
+                key={s.weekday}
                 className={cn(
                   "flex items-center gap-3 border-b border-border px-4 py-2.5 last:border-0",
                   isToday && "bg-primary/5",
@@ -415,25 +425,35 @@ function ActiveProgramView({
               >
                 <span
                   className={cn(
-                    "w-8 shrink-0 text-sm font-bold",
+                    "w-12 shrink-0 text-sm font-bold",
                     isToday ? "text-primary" : "text-muted",
                   )}
                 >
-                  {WD_SHORT[w]}
+                  {rel}
                 </span>
                 <span
                   className={cn(
                     "size-2 shrink-0 rounded-full",
-                    d ? "bg-primary" : "bg-border",
+                    s.day ? "bg-primary" : "bg-border",
                   )}
                 />
-                {d ? (
-                  <Link href={`/routines/${d.routineId}`} className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{d.label}</p>
-                    <p className="truncate text-xs text-muted">{d.focus}</p>
+                {s.day ? (
+                  <Link
+                    href={`/routines/${s.day.routineId}`}
+                    className="min-w-0 flex-1"
+                  >
+                    <p className="truncate text-sm font-medium">{s.day.label}</p>
+                    <p className="truncate text-xs text-muted">
+                      {WD_LONG[s.weekday]} · {s.day.focus}
+                    </p>
                   </Link>
                 ) : (
-                  <span className="flex-1 text-sm text-muted">Frei</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="text-sm text-muted">Frei</span>
+                    <span className="block truncate text-xs text-muted/70">
+                      {WD_LONG[s.weekday]}
+                    </span>
+                  </span>
                 )}
                 {isToday && (
                   <span className="shrink-0 rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase text-primary-foreground">
@@ -444,6 +464,16 @@ function ActiveProgramView({
             );
           })}
         </ul>
+        <div className="border-t border-border px-4 py-2.5">
+          <p className="flex items-start gap-1.5 text-[11px] leading-snug text-muted">
+            <Info className="mt-0.5 size-3.5 shrink-0 text-primary" />
+            <span>
+              Die Trainings laufen in fester Reihenfolge weiter. Lässt du eins
+              aus, rückt es einfach auf den nächsten Trainingstag – es fällt
+              nichts weg, alles verschiebt sich nur.
+            </span>
+          </p>
+        </div>
         {editWd && (
           <div className="border-t border-border px-4 py-3">
             <p className="mb-2 text-xs text-muted">
@@ -466,8 +496,9 @@ function ActiveProgramView({
               ))}
             </div>
             <p className="mt-2 text-[11px] text-muted">
-              Der Coach verteilt die {len} Trainingstage auf deine gewählten
-              Wochentage.
+              Der Coach verteilt die {len} Trainings fortlaufend auf deine
+              gewählten Wochentage – nimmst du Tage raus, verschieben sie sich
+              einfach, statt auszufallen.
             </p>
           </div>
         )}
