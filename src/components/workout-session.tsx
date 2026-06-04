@@ -46,6 +46,12 @@ import {
   type MuscleStatus,
 } from "@/components/muscle-map";
 import { SESSION_TOTAL_HIGH } from "@/lib/coach-knowledge";
+import {
+  groupForSlug,
+  volumeStatus,
+  STATUS_LABEL,
+  STATUS_COLOR,
+} from "@/lib/coach-volume";
 import { setTypeLabels, setTypeShort } from "@/lib/labels";
 import { formatDuration, cn } from "@/lib/utils";
 import {
@@ -141,6 +147,7 @@ export function WorkoutSession({
   muscles,
   equipment,
   coach,
+  weeklyBaseline = {},
 }: {
   initial: Initial;
   previous: Record<string, { weight: number; reps: number; durationSec?: number }[]>;
@@ -149,6 +156,8 @@ export function WorkoutSession({
   muscles: { slug: string; name: string }[];
   equipment: { slug: string; name: string }[];
   coach: { profile: CoachProfile; baseline: Record<string, number> };
+  // Wochenvolumen je Muskelgruppe (Sätze) VOR diesem Workout.
+  weeklyBaseline?: Record<string, number>;
 }) {
   const [exercises, setExercises] = useState<ExState[]>(initial.exercises);
   // Langzeit-Gedächtnis des Coaches als State, damit auch mitten im Workout
@@ -314,6 +323,28 @@ export function WorkoutSession({
 
   // Zeit-Übung (Plank, Wandsitz, Cardio): Dauer statt Wiederholungen.
   const isTimeEx = (ex: ExState) => ex.trackingType === "time";
+
+  // Sätze dieser Einheit je Muskelgruppe (primär 1, sekundär 0.5) – live, für
+  // das Wochenvolumen-Mitdenken im Workout.
+  const sessionGroupSets = useMemo(() => {
+    const acc: Record<string, number> = {};
+    for (const ex of exercises) {
+      const done = ex.sets.filter(
+        (s) =>
+          s.isCompleted &&
+          s.setType !== "warmup" &&
+          (s.weight > 0 || s.reps > 0 || s.durationSec > 0),
+      ).length;
+      if (done <= 0) continue;
+      const pg = groupForSlug(ex.muscleSlug);
+      if (pg) acc[pg] = (acc[pg] ?? 0) + done;
+      for (const sec of ex.secondarySlugs) {
+        const sg = groupForSlug(sec);
+        if (sg) acc[sg] = (acc[sg] ?? 0) + done * 0.5;
+      }
+    }
+    return acc;
+  }, [exercises]);
 
   // Arbeitssätze (ohne Aufwärmsätze) einer Übung.
   const workingSetsOf = (ex: ExState) =>
@@ -789,6 +820,28 @@ export function WorkoutSession({
                   />
                 </button>
                 <p className="text-xs text-muted">{ex.muscleName}</p>
+                {!isCollapsed &&
+                  (() => {
+                    const gk = groupForSlug(ex.muscleSlug);
+                    if (!gk) return null;
+                    const total = Math.round(
+                      ((weeklyBaseline[gk] ?? 0) + (sessionGroupSets[gk] ?? 0)) *
+                        2,
+                    ) / 2;
+                    if (total <= 0) return null;
+                    const st = volumeStatus(total, gk, coach.profile);
+                    return (
+                      <p className="mt-0.5 text-[11px]">
+                        <span className="text-muted">Diese Woche: </span>
+                        <span
+                          className="font-semibold tabular-nums"
+                          style={{ color: STATUS_COLOR[st] }}
+                        >
+                          {total} Sätze · {STATUS_LABEL[st]}
+                        </span>
+                      </p>
+                    );
+                  })()}
                 {isCollapsed ? (
                   <p className="mt-0.5 flex items-center gap-1 text-xs font-medium text-success">
                     <CheckCircle2 className="size-3.5 shrink-0" />

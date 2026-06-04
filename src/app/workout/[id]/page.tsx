@@ -4,6 +4,11 @@ import { notFound, redirect } from "next/navigation";
 import { WorkoutSession } from "@/components/workout-session";
 import { loadCoachProfile } from "@/lib/coach-data";
 import { e1rm, type ExerciseHistory } from "@/lib/coach";
+import {
+  aggregateWeekly,
+  weeklyWindowStart,
+  type SetEntry,
+} from "@/lib/coach-volume";
 
 export const dynamic = "force-dynamic";
 
@@ -114,6 +119,64 @@ export default async function WorkoutPage({
     if (!(pr.exerciseId in baseline)) baseline[pr.exerciseId] = pr.value;
   }
 
+  // Wochenvolumen je Muskelgruppe (letzte 7 Tage, OHNE dieses laufende Workout)
+  // – damit der Coach live mitdenkt, wenn ein Muskel diese Woche schon viel/zu
+  // wenig bekommen hat.
+  const weekAgo = new Date(weeklyWindowStart());
+  const recentForVol = await db.workout.findMany({
+    where: {
+      userId: user.id,
+      finishedAt: { not: null },
+      startedAt: { gte: weekAgo },
+      id: { not: workout.id },
+    },
+    select: {
+      startedAt: true,
+      exercises: {
+        select: {
+          exercise: {
+            select: {
+              primaryMuscle: { select: { slug: true } },
+              secondaryMuscles: true,
+            },
+          },
+          sets: {
+            select: {
+              isCompleted: true,
+              setType: true,
+              weight: true,
+              reps: true,
+              durationSec: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  const volEntries: SetEntry[] = [];
+  for (const w of recentForVol) {
+    const day = w.startedAt.toISOString().slice(0, 10);
+    for (const we of w.exercises) {
+      const hard = we.sets.filter(
+        (s) =>
+          s.isCompleted &&
+          s.setType !== "warmup" &&
+          (s.weight > 0 || s.reps > 0 || s.durationSec > 0),
+      ).length;
+      if (hard === 0) continue;
+      const primary = we.exercise.primaryMuscle.slug;
+      const secondary = we.exercise.secondaryMuscles
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (let i = 0; i < hard; i++) volEntries.push({ primary, secondary, day });
+    }
+  }
+  const weeklyBaseline: Record<string, number> = {};
+  for (const g of aggregateWeekly(volEntries, profile)) {
+    weeklyBaseline[g.key] = g.sets;
+  }
+
   const pickerItems = allExercises.map((e) => ({
     id: e.id,
     nameDe: e.nameDe,
@@ -175,6 +238,7 @@ export default async function WorkoutPage({
       muscles={muscles.map((m) => ({ slug: m.slug, name: m.nameDe }))}
       equipment={equipment.map((e) => ({ slug: e.slug, name: e.nameDe }))}
       coach={{ profile, baseline }}
+      weeklyBaseline={weeklyBaseline}
     />
   );
 }

@@ -4,6 +4,13 @@ import { requireUser } from "@/lib/auth";
 import { PageHeader, Card, EmptyState, LinkButton, InfoBox } from "@/components/ui";
 import { loadCoachProfile } from "@/lib/coach-data";
 import {
+  aggregateWeekly,
+  volumeInsights,
+  weeklyWindowStart,
+  type SetEntry,
+} from "@/lib/coach-volume";
+import { WeeklyVolumeReport } from "@/components/weekly-volume-report";
+import {
   analyze,
   profileLine,
   type AnalysisWorkout,
@@ -244,6 +251,31 @@ export default async function AnalysisPage() {
 
   const a = analyze(profile, workouts, catalog);
 
+  // Wochenvolumen je Muskel (letzte 7 Tage) – übergreifende Coach-Intelligenz.
+  const weekAgo = weeklyWindowStart();
+  const weeklyEntries: SetEntry[] = [];
+  for (const w of workoutsRaw) {
+    if (!w.finishedAt || w.startedAt.getTime() < weekAgo) continue;
+    const day = w.startedAt.toISOString().slice(0, 10);
+    for (const we of w.exercises) {
+      const hard = we.sets.filter(
+        (s) =>
+          s.isCompleted &&
+          s.setType !== "warmup" &&
+          (s.weight > 0 || s.reps > 0 || s.durationSec > 0),
+      ).length;
+      if (hard === 0) continue;
+      const primary = we.exercise.primaryMuscle.slug;
+      const secondary = we.exercise.secondaryMuscles
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      for (let i = 0; i < hard; i++) weeklyEntries.push({ primary, secondary, day });
+    }
+  }
+  const weeklyGroups = aggregateWeekly(weeklyEntries, profile);
+  const weeklyVol = volumeInsights(weeklyGroups);
+
   if (!a.hasData) {
     return (
       <div className="space-y-5">
@@ -299,6 +331,9 @@ export default async function AnalysisPage() {
 
       {/* Persönlicher, datengetriebener Plan */}
       <PlanCard plan={a.plan} />
+
+      {/* Wochenvolumen je Muskel (7 Tage) */}
+      <WeeklyVolumeReport groups={weeklyGroups} insights={weeklyVol} />
 
       {/* Prioritäten */}
       <Card className="space-y-3">
