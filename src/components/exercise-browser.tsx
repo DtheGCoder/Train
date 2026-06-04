@@ -18,6 +18,7 @@ export type ExerciseItem = {
   equipmentName: string | null;
   mechanic: string;
   category: string;
+  trackingType?: string;
   isCustom: boolean;
   instructions: string;
 };

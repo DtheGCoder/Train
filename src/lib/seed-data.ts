@@ -44,8 +44,41 @@ export type ExSeed = {
   mechanic?: "compound" | "isolation";
   force?: "push" | "pull" | "static";
   category?: "strength" | "cardio" | "stretching";
+  trackingType?: "reps" | "time";
   instructions?: string;
 };
+
+// Übungen, die nach Zeit (Sekunden) statt Wiederholungen getrackt werden:
+// statische Halte-Übungen und Ausdauer/Cardio.
+export const TIME_EXERCISE_NAMES = new Set<string>([
+  "Plank",
+  "Seitlicher Plank",
+  "Plank mit Schulterklopfen",
+  "Wandsitz",
+  "Hollow Hold",
+  "L-Sitz",
+  "Aushängen (Dead Hang)",
+  "Plattengriff-Halten",
+  "Laufband",
+  "Rudergerät",
+  "Fahrradergometer",
+  "Crosstrainer",
+  "Stairmaster",
+  "Seilspringen",
+  "Laufen (draußen)",
+  "SkiErg",
+  "Assault Bike",
+  "Battle Ropes",
+  "HIIT-Intervalle",
+  "Sprints",
+  "Schwimmen",
+  "Radfahren (draußen)",
+  "Wandern",
+  "Boxsack",
+  "Farmer's Walk",
+  "Koffer-Tragen (Kurzhantel)",
+  "Bärengang",
+]);
 
 const E = (
   nameDe: string,
@@ -428,7 +461,13 @@ export const exercises: ExSeed[] = [
   E("Trizepsdrücken (V-Stange, Kabel)", "V-Bar Pushdown", "triceps", "cable", { mechanic: "isolation", force: "push" }),
 ];
 
-// Fertige Vorlagen: [Übungsname (nameDe), Zielsätze, Zielwdh.]
+// Zeit-basierte Übungen markieren (Plank, Wandsitz, Cardio …).
+for (const ex of exercises) {
+  if (TIME_EXERCISE_NAMES.has(ex.nameDe)) ex.trackingType = "time";
+}
+
+// Fertige Vorlagen: [Übungsname (nameDe), Zielsätze, Zielwert].
+// Bei Zeit-Übungen ist der dritte Wert die Ziel-DAUER in Sekunden.
 export type PresetEx = [string, number, number];
 export type PresetGoal = "strength" | "hypertrophy" | "endurance" | "general";
 export type PresetLevel = "beginner" | "intermediate" | "advanced";
@@ -466,7 +505,7 @@ export const presets: Preset[] = [
       ["Langhantelrudern", 3, 8],
       ["Schulterdrücken (Langhantel)", 3, 10],
       ["Bizeps Curls (Kurzhantel)", 2, 12],
-      ["Plank", 3, 1],
+      ["Plank", 3, 45],
     ],
   },
   {
@@ -632,7 +671,7 @@ export const presets: Preset[] = [
       ["Reverse Flys (Maschine)", 3, 15],
       ["Aufrechtes Rudern (Langhantel)", 3, 12],
       ["Beinheben hängend", 3, 12],
-      ["Plank", 3, 1],
+      ["Plank", 3, 45],
     ],
   },
 
@@ -653,7 +692,7 @@ export const presets: Preset[] = [
       ["Ausfallschritte (Kurzhantel)", 3, 12],
       ["Glute Bridge", 3, 15],
       ["Superman", 3, 15],
-      ["Plank", 3, 1],
+      ["Plank", 3, 45],
     ],
   },
   {
@@ -689,8 +728,8 @@ export const presets: Preset[] = [
       ["Crunches", 3, 20],
       ["Beinheben liegend", 3, 15],
       ["Russian Twists", 3, 20],
-      ["Seitlicher Plank", 3, 1],
-      ["Plank", 3, 1],
+      ["Seitlicher Plank", 3, 30],
+      ["Plank", 3, 45],
     ],
   },
 

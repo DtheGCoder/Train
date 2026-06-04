@@ -286,7 +286,16 @@ export async function startWorkout(routineId?: string) {
   const routine = routineId
     ? await db.routine.findFirst({
         where: { id: routineId, userId: user.id },
-        include: { exercises: { orderBy: { position: "asc" } } },
+        include: {
+          exercises: {
+            orderBy: { position: "asc" },
+            include: {
+              exercise: {
+                select: { trackingType: true, equipment: { select: { slug: true } } },
+              },
+            },
+          },
+        },
       })
     : null;
 
@@ -300,7 +309,16 @@ export async function startWorkout(routineId?: string) {
 
   // Übungen + Zielsätze aus Routine übernehmen
   if (routine) {
+    // Körpergewicht für die Vorbelegung von Körpergewichtsübungen.
+    const settings = await db.settings.findUnique({
+      where: { userId: user.id },
+      select: { bodyweightKg: true },
+    });
+    const bw = settings?.bodyweightKg ?? 0;
+
     for (const re of routine.exercises) {
+      const isTime = re.exercise.trackingType === "time";
+      const isBodyweight = re.exercise.equipment?.slug === "bodyweight";
       const we = await db.workoutExercise.create({
         data: {
           workoutId: workout.id,
@@ -314,12 +332,16 @@ export async function startWorkout(routineId?: string) {
       let setNo = 0;
       for (const ps of planned) {
         setNo += 1;
+        // Körpergewichtsübung: Gewicht mit dem Körpergewicht vorbelegen
+        // (Nutzer kann Zusatzgewicht addieren). Zeit-Übung: Wert = Sekunden.
+        const weight = ps.weight > 0 ? ps.weight : isBodyweight ? bw : 0;
         await db.workoutSet.create({
           data: {
             workoutExerciseId: we.id,
             setNumber: setNo,
-            reps: ps.reps,
-            weight: ps.weight,
+            reps: isTime ? 0 : ps.reps,
+            durationSec: isTime ? ps.reps : 0,
+            weight,
             restSec: re.targetRestSec,
           },
         });
@@ -347,8 +369,17 @@ export async function addExerciseToWorkout(
     data: { workoutId, exerciseId, position: count },
     include: { exercise: { include: { primaryMuscle: true, equipment: true } } },
   });
+  // Körpergewichtsübung: Gewicht mit dem Körpergewicht vorbelegen.
+  let weight = 0;
+  if (we.exercise.equipment?.slug === "bodyweight") {
+    const settings = await db.settings.findUnique({
+      where: { userId: user.id },
+      select: { bodyweightKg: true },
+    });
+    weight = settings?.bodyweightKg ?? 0;
+  }
   const set = await db.workoutSet.create({
-    data: { workoutExerciseId: we.id, setNumber: 1 },
+    data: { workoutExerciseId: we.id, setNumber: 1, weight },
   });
   return { ...we, sets: [set] };
 }
@@ -379,6 +410,7 @@ export async function addSet(workoutExerciseId: string) {
       setNumber: (last?.setNumber ?? 0) + 1,
       weight: last?.weight ?? 0,
       reps: last?.reps ?? 0,
+      durationSec: last?.durationSec ?? 0,
       restSec: last?.restSec ?? 0,
     },
   });
@@ -389,6 +421,7 @@ export async function updateSet(
   data: {
     weight?: number;
     reps?: number;
+    durationSec?: number;
     rpe?: number | null;
     setType?: string;
     isCompleted?: boolean;

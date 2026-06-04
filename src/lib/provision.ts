@@ -4,7 +4,13 @@
 // Relative Imports (kein "@/"-Alias!), damit dieses Modul sowohl aus dem
 // tsx-Seed-Skript als auch aus den Next-Server-Actions importierbar ist.
 import type { PrismaClient } from "../generated/prisma/client";
-import { muscleGroups, equipment, exercises, presets } from "./seed-data";
+import {
+  muscleGroups,
+  equipment,
+  exercises,
+  presets,
+  TIME_EXERCISE_NAMES,
+} from "./seed-data";
 
 // Akzeptiert sowohl den vollen PrismaClient als auch einen Transaktions-Client.
 type Db = Pick<
@@ -85,6 +91,7 @@ export async function provisionUserContent(db: Db, userId: string) {
         category: ex.category ?? "strength",
         mechanic: ex.mechanic ?? "isolation",
         forceType: ex.force ?? "push",
+        trackingType: ex.trackingType ?? "reps",
         instructions: ex.instructions ?? "",
         isCustom: false,
         userId,
@@ -92,6 +99,16 @@ export async function provisionUserContent(db: Db, userId: string) {
     });
     exByName.set(ex.nameDe, created.id);
   }
+
+  // Bestehende Übungen idempotent auf Zeit-Tracking umstellen (Plank, Cardio …).
+  await db.exercise.updateMany({
+    where: {
+      userId,
+      nameDe: { in: [...TIME_EXERCISE_NAMES] },
+      trackingType: { not: "time" },
+    },
+    data: { trackingType: "time" },
+  });
 
   // Vorlagen-Routinen idempotent sicherstellen — auch für bestehende Accounts,
   // damit überarbeitete/neue Vorlagen bei allen Nutzern ankommen.

@@ -31,6 +31,10 @@ import {
   type PreviewExercise,
 } from "@/components/exercise-preview";
 import { RestTimer } from "@/components/rest-timer";
+import {
+  ensureServiceWorker,
+  requestNotifyPermission,
+} from "@/lib/notify";
 import { CoachCard, type CoachReaction } from "@/components/coach-card";
 import {
   MuscleQualityMap,
@@ -74,6 +78,7 @@ type SetState = {
   setNumber: number;
   weight: number;
   reps: number;
+  durationSec: number;
   rpe: number | null;
   setType: string;
   isCompleted: boolean;
@@ -89,6 +94,7 @@ type ExState = {
   equipmentName: string | null;
   mechanic: string;
   category: string;
+  trackingType: string;
   instructions: string;
   sets: SetState[];
 };
@@ -132,7 +138,7 @@ export function WorkoutSession({
   coach,
 }: {
   initial: Initial;
-  previous: Record<string, { weight: number; reps: number }[]>;
+  previous: Record<string, { weight: number; reps: number; durationSec?: number }[]>;
   history?: Record<string, ExerciseHistory>;
   pickerItems: ExerciseItem[];
   muscles: { slug: string; name: string }[];
@@ -145,6 +151,8 @@ export function WorkoutSession({
   const [showPicker, setShowPicker] = useState(false);
   const [restSeconds, setRestSeconds] = useState<number | null>(null);
   const [restKey, setRestKey] = useState(0);
+  const [restHint, setRestHint] = useState("");
+  const notifyAskedRef = useRef(false);
   const [, startTransition] = useTransition();
   const router = useRouter();
   const [isFinishing, setIsFinishing] = useState(false);
@@ -173,6 +181,11 @@ export function WorkoutSession({
   const [coachOpen, setCoachOpen] = useState(true);
   // Übungs-Vorschau (Video & Details) – direkt im Workout, ohne wegzunavigieren.
   const [preview, setPreview] = useState<PreviewExercise | null>(null);
+
+  // Service Worker registrieren (für Pausen-Benachrichtigungen).
+  useEffect(() => {
+    void ensureServiceWorker();
+  }, []);
 
   useEffect(() => {
     // Beim Beenden einfrieren: kein Interval mehr, der Wert bleibt stehen.
@@ -236,6 +249,7 @@ export function WorkoutSession({
         await updateSet(setId, {
           weight: patch.weight,
           reps: patch.reps,
+          durationSec: patch.durationSec,
           rpe: patch.rpe,
           setType: patch.setType,
           isCompleted: patch.isCompleted,
@@ -257,6 +271,9 @@ export function WorkoutSession({
 
   const setReaction = (exId: string, r: CoachReaction) =>
     setCoachMsg((prev) => ({ ...prev, [exId]: r }));
+
+  // Zeit-Übung (Plank, Wandsitz, Cardio): Dauer statt Wiederholungen.
+  const isTimeEx = (ex: ExState) => ex.trackingType === "time";
 
   // Arbeitssätze (ohne Aufwärmsätze) einer Übung.
   const workingSetsOf = (ex: ExState) =>
@@ -309,6 +326,19 @@ export function WorkoutSession({
     });
   };
 
+  // Startet eine Pause: setzt Dauer + Hinweis und remountet den Timer (key).
+  // Beim ersten Mal wird – im Klick-Kontext – die Benachrichtigungs-Erlaubnis
+  // angefragt.
+  const startRest = (secs: number, hint: string) => {
+    setRestSeconds(secs);
+    setRestHint(hint);
+    setRestKey((k) => k + 1);
+    if (!notifyAskedRef.current) {
+      notifyAskedRef.current = true;
+      void requestNotifyPermission();
+    }
+  };
+
   const toggleComplete = (ex: ExState, s: SetState) => {
     const next = !s.isCompleted;
     // Frisch getippten RPE bevorzugen (Ref ist synchron), sonst State-Wert.
@@ -336,9 +366,15 @@ export function WorkoutSession({
         });
         // Pause nur, wenn es noch weitergeht.
         if (nextEx) {
-          setRestSeconds(recommendedRest(coach.profile, { rpe }));
-          setRestKey((k) => k + 1);
+          startRest(recommendedRest(coach.profile, { rpe }), `Weiter mit ${nextEx.name}`);
         }
+      } else if (isTimeEx(ex)) {
+        // Zeit-Übung: keine Wdh-/Last-Empfehlung, nur kurzes Feedback + Pause.
+        setReaction(ex.id, {
+          tone: "good",
+          message: "Sauber gehalten — beim nächsten Mal ein paar Sekunden länger.",
+        });
+        startRest(recommendedRest(coach.profile, { rpe }), `Nächster Satz – ${ex.name}`);
       } else {
         // Coach wertet den Satz im Kontext aus: Verlauf (Trend/Plateau) +
         // bisherige Sätze dieser Einheit (Ermüdung), nicht stur „mehr".
@@ -351,8 +387,7 @@ export function WorkoutSession({
         );
         setReaction(ex.id, { tone: adj.tone, message: adj.message });
         // Rest-Timer: Pause skaliert mit Ziel/Stil UND der Anstrengung (RPE).
-        setRestSeconds(recommendedRest(coach.profile, { rpe }));
-        setRestKey((k) => k + 1);
+        startRest(recommendedRest(coach.profile, { rpe }), `Nächster Satz – ${ex.name}`);
       }
     }
   };
@@ -380,6 +415,7 @@ export function WorkoutSession({
                     setNumber: created.setNumber,
                     weight: created.weight,
                     reps: created.reps,
+                    durationSec: created.durationSec,
                     rpe: created.rpe,
                     setType: created.setType,
                     isCompleted: created.isCompleted,
@@ -429,12 +465,14 @@ export function WorkoutSession({
           equipmentName: item.equipmentName,
           mechanic: item.mechanic,
           category: item.category,
+          trackingType: item.trackingType ?? "reps",
           instructions: item.instructions,
           sets: created.sets.map((s) => ({
             id: s.id,
             setNumber: s.setNumber,
             weight: s.weight,
             reps: s.reps,
+            durationSec: s.durationSec,
             rpe: s.rpe,
             setType: s.setType,
             isCompleted: s.isCompleted,
@@ -649,6 +687,7 @@ export function WorkoutSession({
 
       {exercises.map((ex) => {
         const prev = previous[ex.exerciseId];
+        const isTime = isTimeEx(ex);
         const wsets = workingSetsOf(ex);
         const setsPlanned = wsets.length;
         const setsDone = wsets.filter((s) => s.isCompleted).length;
@@ -659,11 +698,10 @@ export function WorkoutSession({
           insight: insightOf(ex),
         });
         // Aufwärm-Rampe nur vor dem ersten Arbeitssatz – und NICHT bei
-        // Körpergewichtsübungen (z. B. Liegestütze): unter dem eigenen
-        // Körpergewicht „leichter" aufzuwärmen geht physisch nicht.
+        // Körpergewichts- oder Zeit-Übungen (physisch/logisch nicht sinnvoll).
         const isBodyweight = ex.equipmentSlug === "bodyweight";
         const warmup =
-          setsDone === 0 && rec.hasBaseline && !isBodyweight
+          setsDone === 0 && rec.hasBaseline && !isBodyweight && !isTime
             ? warmupPlan(rec.weight, coach.profile)
             : [];
         return (
@@ -698,7 +736,11 @@ export function WorkoutSession({
                   <p className="mt-0.5 truncate text-xs text-muted">
                     Letztes Mal:{" "}
                     <span className="font-mono tabular-nums text-foreground/70">
-                      {prev.map((p) => `${p.weight}×${p.reps}`).join(", ")}
+                      {isTime
+                        ? prev
+                            .map((p) => `${p.durationSec ?? 0}s`)
+                            .join(", ")
+                        : prev.map((p) => `${p.weight}×${p.reps}`).join(", ")}
                     </span>
                   </p>
                 )}
@@ -713,26 +755,37 @@ export function WorkoutSession({
             </div>
 
             <div className="px-2 py-2">
-              <CoachCard
-                rec={rec}
-                reaction={coachMsg[ex.id] ?? null}
-                oneRm={liveE1RM(ex)}
-                onLimitTest={() => handleLimitTest(ex)}
-                done={exDone}
-                nextExerciseName={nextName}
-                setsDone={setsDone}
-                setsPlanned={setsPlanned}
-                warmup={warmup}
-                tempo={tempoCue(coach.profile)}
-                collapsed={!coachOpen}
-                onToggleCollapsed={() => setCoachOpen((v) => !v)}
-              />
+              {isTime ? (
+                <div className="mx-2 mb-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
+                  <p className="text-xs leading-snug text-muted">
+                    <span className="font-semibold text-primary">Coach:</span>{" "}
+                    Zeit-Übung — halte die Position sauber und steigere die Dauer
+                    Schritt für Schritt.
+                    {coachMsg[ex.id] ? ` ${coachMsg[ex.id]!.message}` : ""}
+                  </p>
+                </div>
+              ) : (
+                <CoachCard
+                  rec={rec}
+                  reaction={coachMsg[ex.id] ?? null}
+                  oneRm={liveE1RM(ex)}
+                  onLimitTest={() => handleLimitTest(ex)}
+                  done={exDone}
+                  nextExerciseName={nextName}
+                  setsDone={setsDone}
+                  setsPlanned={setsPlanned}
+                  warmup={warmup}
+                  tempo={tempoCue(coach.profile)}
+                  collapsed={!coachOpen}
+                  onToggleCollapsed={() => setCoachOpen((v) => !v)}
+                />
+              )}
 
               {/* Spaltenkopf */}
               <div className="grid grid-cols-[2.5rem_1fr_1fr_1fr_3rem] items-center gap-2 px-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted">
                 <span>Satz</span>
                 <span className="text-center">kg</span>
-                <span className="text-center">Wdh.</span>
+                <span className="text-center">{isTime ? "Zeit (s)" : "Wdh."}</span>
                 <span className="text-center">RPE</span>
                 <span className="text-center">✓</span>
               </div>
@@ -772,18 +825,34 @@ export function WorkoutSession({
                       }}
                       className="h-10 w-full rounded-md border border-border bg-surface-2 px-2 text-center text-base outline-none focus:border-primary"
                     />
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      defaultValue={s.reps || ""}
-                      placeholder={p ? String(p.reps) : "0"}
-                      onBlur={(e) =>
-                        patchSet(ex.id, s.id, {
-                          reps: parseInt(e.target.value) || 0,
-                        })
-                      }
-                      className="h-10 w-full rounded-md border border-border bg-surface-2 px-2 text-center text-base outline-none focus:border-primary"
-                    />
+                    {isTime ? (
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        defaultValue={s.durationSec || ""}
+                        placeholder={p ? String(p.durationSec ?? 0) : "0"}
+                        title="Dauer in Sekunden"
+                        onBlur={(e) =>
+                          patchSet(ex.id, s.id, {
+                            durationSec: parseInt(e.target.value) || 0,
+                          })
+                        }
+                        className="h-10 w-full rounded-md border border-border bg-surface-2 px-2 text-center text-base outline-none focus:border-primary"
+                      />
+                    ) : (
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        defaultValue={s.reps || ""}
+                        placeholder={p ? String(p.reps) : "0"}
+                        onBlur={(e) =>
+                          patchSet(ex.id, s.id, {
+                            reps: parseInt(e.target.value) || 0,
+                          })
+                        }
+                        className="h-10 w-full rounded-md border border-border bg-surface-2 px-2 text-center text-base outline-none focus:border-primary"
+                      />
+                    )}
                     <input
                       type="number"
                       inputMode="decimal"
@@ -913,6 +982,7 @@ export function WorkoutSession({
         <RestTimer
           key={restKey}
           seconds={restSeconds}
+          nextHint={restHint}
           onClose={() => setRestSeconds(null)}
         />
       )}

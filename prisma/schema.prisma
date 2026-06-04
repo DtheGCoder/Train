@@ -40,6 +40,9 @@ model Exercise {
   category          String   @default("strength") // strength, cardio, stretching
   mechanic          String   @default("isolation") // compound, isolation
   forceType         String   @default("push") // push, pull, static
+  // Wie wird die Übung getrackt: "reps" (Wiederholungen) oder "time" (Sekunden,
+  // z. B. Plank, Wandsitz, Cardio).
+  trackingType      String   @default("reps")
   instructions      String   @default("")
   isCustom          Boolean  @default(false)
   createdAt         DateTime @default(now())
@@ -182,6 +185,7 @@ model WorkoutSet {
   setNumber         Int             @default(1)
   weight            Float           @default(0)
   reps              Int             @default(0)
+  durationSec       Int             @default(0) // für Zeit-Übungen (Plank etc.)
   rpe               Float? // 1-10, optional
   setType           String          @default("normal") // warmup, normal, dropset, failure
   isCompleted       Boolean         @default(false)

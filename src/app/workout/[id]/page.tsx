@@ -56,6 +56,7 @@ export default async function WorkoutPage({
       previousMap[exerciseId] = lastWithSets.sets.map((s) => ({
         weight: s.weight,
         reps: s.reps,
+        durationSec: s.durationSec,
       }));
     }
     // Verlauf chronologisch AUFSTEIGEND, je Einheit Kennzahlen verdichten.
@@ -123,6 +124,7 @@ export default async function WorkoutPage({
     equipmentName: e.equipment?.nameDe ?? null,
     mechanic: e.mechanic,
     category: e.category,
+    trackingType: e.trackingType,
     isCustom: e.isCustom,
     instructions: e.instructions,
   }));
@@ -143,12 +145,14 @@ export default async function WorkoutPage({
       equipmentName: we.exercise.equipment?.nameDe ?? null,
       mechanic: we.exercise.mechanic,
       category: we.exercise.category,
+      trackingType: we.exercise.trackingType,
       instructions: we.exercise.instructions,
       sets: we.sets.map((s) => ({
         id: s.id,
         setNumber: s.setNumber,
         weight: s.weight,
         reps: s.reps,
+        durationSec: s.durationSec,
         rpe: s.rpe,
         setType: s.setType,
         isCompleted: s.isCompleted,
