@@ -32,6 +32,18 @@
   border-color: var(--border);
 }
 
+/* Scrollbalken überall ausblenden – Scrollen bleibt voll funktionsfähig,
+   nur die sichtbare Leiste (rechts/unten) wird entfernt. */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* alte Edge/IE */
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none; /* Chrome, Safari, neue Edge */
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
