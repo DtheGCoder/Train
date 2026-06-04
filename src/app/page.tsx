@@ -1,10 +1,11 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
-import { Play, Dumbbell, ChevronRight, Flame } from "lucide-react";
+import { Play, Dumbbell, ChevronRight, Flame, Mail } from "lucide-react";
 import { Card, Button, LinkButton, PageHeader } from "@/components/ui";
 import { Avatar } from "@/components/avatar";
 import { startWorkout } from "@/lib/actions";
+import { unreadCount, parseReadIds } from "@/lib/news";
 import { formatDuration } from "@/lib/utils";
 import { format } from "date-fns";
 import { de } from "date-fns/locale";
@@ -38,23 +39,43 @@ export default async function Home() {
     where: { userId: user.id, finishedAt: { not: null } },
   });
 
+  const settings = await db.settings.findUnique({
+    where: { userId: user.id },
+    select: { readNewsJson: true },
+  });
+  const unread = unreadCount(parseReadIds(settings?.readNewsJson));
+
   return (
     <div className="space-y-6">
       <PageHeader
         title={`Hallo, ${user.displayName ?? user.username}`}
         subtitle="Bereit fürs Training?"
         action={
-          <Link
-            href="/profile"
-            aria-label="Coach & Profil"
-            className="rounded-full ring-2 ring-transparent transition hover:ring-primary/40 active:ring-primary/60"
-          >
-            <Avatar
-              src={user.avatar}
-              name={user.displayName ?? user.username}
-              className="size-11 text-sm"
-            />
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/news"
+              aria-label={`Postfach${unread > 0 ? ` (${unread} neu)` : ""}`}
+              className="relative flex size-11 items-center justify-center rounded-full bg-surface-2 text-muted transition hover:text-foreground active:scale-95"
+            >
+              <Mail className="size-5" />
+              {unread > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 flex min-w-[1.15rem] items-center justify-center rounded-full border-2 border-background bg-danger px-1 text-[10px] font-bold leading-4 text-white">
+                  {unread}
+                </span>
+              )}
+            </Link>
+            <Link
+              href="/profile"
+              aria-label="Coach & Profil"
+              className="rounded-full ring-2 ring-transparent transition hover:ring-primary/40 active:ring-primary/60"
+            >
+              <Avatar
+                src={user.avatar}
+                name={user.displayName ?? user.username}
+                className="size-11 text-sm"
+              />
+            </Link>
+          </div>
         }
       />
 

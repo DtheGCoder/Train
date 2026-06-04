@@ -281,4 +281,7 @@ model Settings {
   limitations         String @default("") // Verletzungen/Einschränkungen (Freitext)
   availableEquipment  String @default("") // CSV Equipment-Slugs; "" = alles verfügbar
   preferredRepStyle   String @default("auto") // auto, low, high — feinjustiert Wdh.
+
+  // Gelesene Neuigkeiten (Postfach) als JSON-Array von News-IDs.
+  readNewsJson        String @default("[]")
 }

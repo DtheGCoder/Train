@@ -1758,3 +1758,31 @@ export async function resetNutritionDay(date: string) {
   await db.nutritionDay.deleteMany({ where: { userId: user.id, date } });
   revalidatePath("/nutrition");
 }
+
+/* ---------------- Neuigkeiten-Postfach ---------------- */
+
+async function ensureSettings(userId: string) {
+  const s = await db.settings.findUnique({ where: { userId } });
+  if (s) return s;
+  return db.settings.create({ data: { userId } });
+}
+
+// Einzelne Neuigkeit als gelesen markieren.
+export async function markNewsRead(ids: string[]) {
+  const user = await requireUser();
+  const s = await ensureSettings(user.id);
+  let read: string[] = [];
+  try {
+    const v = JSON.parse(s.readNewsJson);
+    if (Array.isArray(v)) read = v as string[];
+  } catch {
+    read = [];
+  }
+  const merged = [...new Set([...read, ...ids])];
+  await db.settings.update({
+    where: { id: s.id },
+    data: { readNewsJson: JSON.stringify(merged) },
+  });
+  revalidatePath("/");
+  revalidatePath("/news");
+}
