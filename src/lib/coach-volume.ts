@@ -58,6 +58,10 @@ export function weeklyWindowStart(): number {
   return Date.now() - 7 * 24 * 60 * 60 * 1000;
 }
 
+export function nowMs(): number {
+  return Date.now();
+}
+
 const EXPERIENCE_FACTOR: Record<Experience, number> = {
   beginner: 0.7,
   intermediate: 1,

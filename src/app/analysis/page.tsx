@@ -7,9 +7,15 @@ import {
   aggregateWeekly,
   volumeInsights,
   weeklyWindowStart,
+  nowMs,
   type SetEntry,
 } from "@/lib/coach-volume";
+import { age } from "@/lib/coach";
+import { readiness } from "@/lib/coach-readiness";
+import { nutritionTargets } from "@/lib/coach-nutrition";
 import { WeeklyVolumeReport } from "@/components/weekly-volume-report";
+import { AnalysisTabs } from "@/components/analysis-tabs";
+import { HeartPulse, Apple, Rocket } from "lucide-react";
 import {
   analyze,
   profileLine,
@@ -292,13 +298,69 @@ export default async function AnalysisPage() {
   const trendIcon = { up: TrendingUp, flat: Minus, down: TrendingDown };
   const trendColor = { up: "text-success", flat: "text-muted", down: "text-danger" };
 
-  return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Coach-Analyse"
-        subtitle="Schonungslos ehrlich, mit allen Fakten aus deinen Daten."
-      />
+  // ---- Readiness / Auto-Regulation ----
+  const lastW = workouts[workouts.length - 1];
+  const daysSinceLast = lastW
+    ? Math.floor((nowMs() - lastW.startedAt.getTime()) / 86_400_000)
+    : null;
+  const last7Count = workouts.filter(
+    (w) => w.startedAt.getTime() >= weeklyWindowStart(),
+  ).length;
+  const volOf = (w: AnalysisWorkout) =>
+    w.exercises.reduce(
+      (s, e) =>
+        s +
+        e.sets
+          .filter((x) => x.isCompleted)
+          .reduce((a, x) => a + x.weight * x.reps, 0),
+      0,
+    );
+  const lastVol = lastW ? volOf(lastW) : 0;
+  const prevVols = workouts.slice(-4, -1).map(volOf);
+  const avgPrev = prevVols.length
+    ? prevVols.reduce((a, b) => a + b, 0) / prevVols.length
+    : 0;
+  const lastHardSets = lastW
+    ? lastW.exercises.reduce(
+        (n, e) =>
+          n + e.sets.filter((x) => x.isCompleted && x.setType !== "warmup").length,
+        0,
+      )
+    : 0;
+  const trainedToday = daysSinceLast === 0;
+  const rd = readiness({
+    daysSinceLast,
+    last7Count,
+    targetDays: profile.trainingDaysPerWeek ?? 3,
+    lastHardSets,
+    volumeTrendDown: avgPrev > 0 && lastVol < avgPrev * 0.9,
+  });
+  const rdTone = {
+    fresh: "text-success",
+    ready: "text-primary",
+    tired: "text-amber-400",
+  }[rd.tone];
 
+  // ---- PR-Prognose (aufsteigende Lifts) ----
+  const forecasts = a.lifts
+    .filter((l) => l.trend === "up" && l.lastE1RM > l.firstE1RM && l.sessions >= 2)
+    .map((l) => {
+      const per = (l.lastE1RM - l.firstE1RM) / Math.max(1, l.sessions - 1);
+      const next = (Math.floor(l.lastE1RM / 5) + 1) * 5;
+      const togo = per > 0 ? Math.ceil((next - l.lastE1RM) / per) : 0;
+      return { name: l.name, next, togo, per: Math.round(per * 10) / 10 };
+    })
+    .filter((f) => f.togo > 0 && f.togo <= 20)
+    .slice(0, 5);
+
+  // ---- Ernährungs-Kurzfazit ----
+  const nTargets = nutritionTargets(profile, {
+    isTrainingDay: trainedToday,
+    age: age(profile),
+  });
+
+  const overviewTab = (
+    <>
       {/* Gesamturteil */}
       <Card className="space-y-4 border-primary/30 bg-primary/5">
         <div className="flex items-center gap-4">
@@ -321,6 +383,22 @@ export default async function AnalysisPage() {
         <p className="text-sm leading-relaxed">{a.verdict}</p>
       </Card>
 
+      {/* Readiness / Auto-Regulation */}
+      <Card className="space-y-2">
+        <div className="flex items-center gap-2">
+          <HeartPulse className={`size-5 ${rdTone}`} />
+          <h2 className="font-semibold">Heutige Bereitschaft</h2>
+          <span className={`ml-auto text-sm font-bold ${rdTone}`}>{rd.label}</span>
+        </div>
+        <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-500"
+            style={{ width: `${rd.score}%` }}
+          />
+        </div>
+        <p className="text-sm leading-snug text-muted">{rd.advice}</p>
+      </Card>
+
       <InfoBox>
         <span className="font-semibold text-foreground">So liest du das:</span>{" "}
         Der Score (0–100) fasst mehrere Bereiche zusammen – Konsistenz, Volumen,
@@ -331,9 +409,6 @@ export default async function AnalysisPage() {
 
       {/* Persönlicher, datengetriebener Plan */}
       <PlanCard plan={a.plan} />
-
-      {/* Wochenvolumen je Muskel (7 Tage) */}
-      <WeeklyVolumeReport groups={weeklyGroups} insights={weeklyVol} />
 
       {/* Prioritäten */}
       <Card className="space-y-3">
@@ -352,11 +427,59 @@ export default async function AnalysisPage() {
           ))}
         </ol>
       </Card>
+    </>
+  );
 
-      {/* Detailbereiche */}
+  const bodyTab = (
+    <>
+      {/* Wochenvolumen je Muskel (7 Tage) */}
+      <WeeklyVolumeReport groups={weeklyGroups} insights={weeklyVol} />
+
+      {/* Detailbereiche (Balance, Muskelgruppen …) */}
       {a.sections.map((s) => (
         <SectionCard key={s.key} section={s} />
       ))}
+    </>
+  );
+
+  const progressTab = (
+    <>
+      {/* PR-Prognose */}
+      {forecasts.length > 0 && (
+        <Card className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Rocket className="size-5 text-primary" />
+            <h2 className="font-semibold">PR-Prognose</h2>
+          </div>
+          <ul className="space-y-2">
+            {forecasts.map((f) => (
+              <li
+                key={f.name}
+                className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface-2 px-3 py-2.5 text-sm"
+              >
+                <span className="min-w-0">
+                  <span className="line-clamp-1 font-medium">{f.name}</span>
+                  <span className="text-xs text-muted">
+                    +{f.per} kg / Einheit im Schnitt
+                  </span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span className="block font-bold tabular-nums text-primary">
+                    {f.next} kg
+                  </span>
+                  <span className="text-[11px] text-muted">
+                    in ~{f.togo} {f.togo === 1 ? "Einheit" : "Einheiten"}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-muted">
+            Hochgerechnet aus deinem bisherigen Tempo (geschätztes 1RM). Bei
+            gutem Schlaf & Ernährung realistisch – Plateaus sind normal.
+          </p>
+        </Card>
+      )}
 
       {/* Kraftentwicklung je Übung (Tabelle) */}
       {a.lifts.length > 0 && (
@@ -439,6 +562,73 @@ export default async function AnalysisPage() {
           </p>
         </Card>
       )}
+    </>
+  );
+
+  const nutritionTab = (
+    <>
+      <Card className="space-y-3 border-primary/30 bg-primary/5">
+        <div className="flex items-center gap-2">
+          <Apple className="size-5 text-primary" />
+          <h2 className="font-semibold">Ernährung & Training</h2>
+        </div>
+        {nTargets ? (
+          <>
+            <p className="text-sm text-muted">
+              {trainedToday ? "Trainingstag" : "Heute"} · {nTargets.goalLabel}.
+              Richtwerte für heute:
+            </p>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              {[
+                { v: nTargets.kcal, l: "kcal" },
+                { v: `${nTargets.protein} g`, l: "Protein" },
+                { v: `${nTargets.carbs} g`, l: "Carbs" },
+                { v: `${nTargets.fat} g`, l: "Fett" },
+              ].map((x) => (
+                <div key={x.l} className="rounded-lg bg-surface p-2">
+                  <p className="text-base font-extrabold tabular-nums">{x.v}</p>
+                  <p className="text-[10px] text-muted">{x.l}</p>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/nutrition"
+              className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+            >
+              <Apple className="size-4" /> Zum Ernährungs-Coach
+            </Link>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted">
+              Für persönliche Ernährungsziele brauche ich dein Körpergewicht
+              (und idealerweise Größe, Alter, Geschlecht).
+            </p>
+            <Link
+              href="/profile"
+              className="text-sm font-semibold text-primary hover:underline"
+            >
+              Im Profil eintragen →
+            </Link>
+          </>
+        )}
+      </Card>
+    </>
+  );
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Coach-Analyse"
+        subtitle="Schonungslos ehrlich, übersichtlich gegliedert."
+      />
+
+      <AnalysisTabs
+        overview={overviewTab}
+        body={bodyTab}
+        progress={progressTab}
+        nutrition={nutritionTab}
+      />
 
       <p className="px-1 text-center text-[11px] text-muted">
         Diese Analyse rechnet rein mit deinen eigenen Trainingsdaten — offline,
