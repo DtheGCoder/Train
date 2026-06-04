@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { PageHeader, EmptyState } from "@/components/ui";
 import { Leaderboard, type LeaderboardRow } from "@/components/leaderboard";
+import { LeaderboardTabs } from "@/components/leaderboard-tabs";
+import { AchievementsView, type AchRow } from "@/components/achievements-view";
 import {
   bestE1RM,
   analyzeExerciseHistory,
@@ -9,6 +11,12 @@ import {
   type ExerciseHistory,
   type TrendCounts,
 } from "@/lib/coach";
+import {
+  statsFromWorkouts,
+  achievementPoints,
+  evaluateAchievements,
+  TOTAL_POINTS,
+} from "@/lib/achievements";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +38,15 @@ export default async function LeaderboardPage() {
         exercises: {
           select: {
             exerciseId: true,
+            exercise: { select: { primaryMuscle: { select: { slug: true } } } },
             sets: {
-              select: { weight: true, reps: true, rpe: true, isCompleted: true },
+              select: {
+                weight: true,
+                reps: true,
+                rpe: true,
+                isCompleted: true,
+                setType: true,
+              },
             },
           },
         },
@@ -51,6 +66,16 @@ export default async function LeaderboardPage() {
   };
 
   const acc = new Map<string, Acc>();
+  // Workouts je Nutzer für die Achievement-Auswertung sammeln.
+  type WLite = {
+    startedAt: Date;
+    exercises: {
+      exerciseId: string;
+      muscleSlug: string;
+      sets: { weight: number; reps: number; isCompleted: boolean; setType: string }[];
+    }[];
+  };
+  const byUser = new Map<string, WLite[]>();
   for (const u of users) {
     acc.set(u.id, {
       username: u.displayName ?? u.username,
@@ -61,12 +86,26 @@ export default async function LeaderboardPage() {
       histories: new Map(),
       best1rm: 0,
     });
+    byUser.set(u.id, []);
   }
 
   for (const w of workouts) {
     if (!w.userId) continue;
     const a = acc.get(w.userId);
     if (!a) continue;
+    byUser.get(w.userId)?.push({
+      startedAt: w.startedAt,
+      exercises: w.exercises.map((e) => ({
+        exerciseId: e.exerciseId,
+        muscleSlug: e.exercise.primaryMuscle.slug,
+        sets: e.sets.map((s) => ({
+          weight: s.weight,
+          reps: s.reps,
+          isCompleted: s.isCompleted,
+          setType: s.setType,
+        })),
+      })),
+    });
     a.volume += w.totalVolume;
     a.workouts += 1;
 
@@ -111,11 +150,13 @@ export default async function LeaderboardPage() {
       else if (status === "regressing") trend.regressing++;
     }
 
+    const achPts = achievementPoints(statsFromWorkouts(byUser.get(userId) ?? []));
     const score = computeScore({
       workouts: a.workouts,
       volume: a.volume,
       best1rm: a.best1rm,
       trend,
+      achievementPoints: achPts,
     });
 
     return {
@@ -141,11 +182,30 @@ export default async function LeaderboardPage() {
 
   const anyActivity = rows.some((r) => r.workouts > 0);
 
+  // Achievements des aktuellen Nutzers (serialisierbar fürs Client-Tab).
+  const myStats = statsFromWorkouts(byUser.get(me.id) ?? []);
+  const achRows: AchRow[] = evaluateAchievements(myStats).map((a) => ({
+    id: a.def.id,
+    category: a.def.category,
+    title: a.def.title,
+    desc: a.def.desc,
+    icon: a.def.icon,
+    points: a.def.points,
+    goal: a.def.goal,
+    unit: a.def.unit,
+    value: Math.round(a.value),
+    progress: a.progress,
+    earned: a.earned,
+  }));
+  const myEarnedPoints = achRows
+    .filter((r) => r.earned)
+    .reduce((s, r) => s + r.points, 0);
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Bestenliste"
-        subtitle="Score aus Konsistenz, Volumen und Coach-Bewertung – Rangliste aller Accounts."
+        subtitle="Rangliste & Achievements – Konsistenz, Volumen, Coach & Belohnungen."
       />
 
       {!anyActivity ? (
@@ -154,7 +214,16 @@ export default async function LeaderboardPage() {
           description="Sobald Workouts abgeschlossen werden, füllt sich hier die Rangliste."
         />
       ) : (
-        <Leaderboard rows={rows} meId={me.id} />
+        <LeaderboardTabs
+          ranking={<Leaderboard rows={rows} meId={me.id} />}
+          achievements={
+            <AchievementsView
+              rows={achRows}
+              earnedPoints={myEarnedPoints}
+              totalPoints={TOTAL_POINTS}
+            />
+          }
+        />
       )}
     </div>
   );

@@ -206,6 +206,11 @@ input[type="number"] {
   }
 }
 
+/* Sanftes Einblenden beim Mounten (für gestaffelte Karten, z. B. Profil). */
+.reveal {
+  animation: riseIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @keyframes confettiFall {
   0% {
     transform: translateY(-12px) rotate(0deg);
@@ -258,7 +263,8 @@ input[type="number"] {
   .finish-pop,
   .finish-rise,
   .demo-a,
-  .demo-b {
+  .demo-b,
+  .reveal {
     animation: none;
   }
   /* Konfetti komplett weglassen, wenn Bewegung reduziert werden soll */

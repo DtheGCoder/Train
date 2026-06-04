@@ -195,8 +195,9 @@ export function Leaderboard({
         </ul>
         <p className="mt-2 text-xs text-muted">
           Score = Konsistenz (10 / Workout) + Volumen (1 / 1.000 kg) + Coach ·
-          Stärke (1 / 2 kg bestem 1RM) + Coach · Fortschritt (Aufwärtstrend je
-          Übung). Tippe auf einen Eintrag für die genaue Aufschlüsselung.
+          Stärke (1 / 2 kg bestem 1RM) + Coach · Fortschritt + freigeschaltete
+          Achievement-Punkte. Tippe auf einen Eintrag für die genaue
+          Aufschlüsselung.
         </p>
       </div>
     </>

@@ -12,6 +12,8 @@ import {
   HeartPulse,
   Gauge,
   CalendarDays,
+  Award,
+  User,
   Sparkles,
   CheckCheck,
 } from "lucide-react";
@@ -27,6 +29,8 @@ const ICON: Record<string, typeof Apple> = {
   gauge: Gauge,
   calendar: CalendarDays,
   dumbbell: Dumbbell,
+  award: Award,
+  user: User,
 };
 
 function fmtDate(iso: string) {

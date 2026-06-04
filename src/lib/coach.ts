@@ -1115,11 +1115,12 @@ export type ScoreInput = {
   volume: number; // Gesamtvolumen in kg
   best1rm: number; // stärkstes geschätztes 1RM in kg
   trend: TrendCounts; // Übungs-Trends laut Coach-Verlaufsanalyse
+  achievementPoints?: number; // verdiente Achievement-Belohnungspunkte
 };
 
 // Eine Zeile der Punkte-Aufschlüsselung (serialisierbar fürs UI).
 export type ScoreLine = {
-  key: "consistency" | "volume" | "strength" | "progress";
+  key: "consistency" | "volume" | "strength" | "progress" | "achievements";
   label: string;
   detail: string; // wie sich die Punkte errechnen
   points: number;
@@ -1186,5 +1187,18 @@ export function computeScore(input: ScoreInput): ScoreResult {
     },
   ];
 
-  return { total: consistency + volume + strength + progress, lines };
+  const ach = Math.max(0, Math.round(input.achievementPoints ?? 0));
+  if (ach > 0) {
+    lines.push({
+      key: "achievements",
+      label: "Achievements",
+      detail: `${ach} Belohnungspunkte freigeschaltet`,
+      points: ach,
+    });
+  }
+
+  return {
+    total: consistency + volume + strength + progress + ach,
+    lines,
+  };
 }

@@ -110,6 +110,26 @@ export async function removeAvatar() {
   revalidatePath("/leaderboard");
 }
 
+export type NameState = { ok?: boolean; error?: string } | undefined;
+
+// Anzeigename ändern (Login-Name bleibt unverändert).
+export async function updateDisplayName(
+  _prev: NameState,
+  formData: FormData,
+): Promise<NameState> {
+  const user = await requireUser();
+  const name = String(formData.get("displayName") ?? "").trim().slice(0, 40);
+  if (name.length < 2) return { error: "Bitte mindestens 2 Zeichen." };
+  await db.user.update({
+    where: { id: user.id },
+    data: { displayName: name },
+  });
+  revalidatePath("/profile");
+  revalidatePath("/");
+  revalidatePath("/leaderboard");
+  return { ok: true };
+}
+
 // Admin: neuen User anlegen. Nur für eingeloggte Admins.
 export async function createUser(formData: FormData) {
   await requireAdmin();

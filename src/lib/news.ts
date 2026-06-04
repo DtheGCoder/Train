@@ -64,6 +64,16 @@ export const NEWS: NewsItem[] = [
         title: "Training: faire Muskel-Karte & Gedächtnis",
         text: "Die Muskel-Karte nach dem Workout färbt fairer ein (3 harte Sätze = grün, sekundär zählt mit). Fügst du eine Übung hinzu, die du schon kennst, ist sie wie beim letzten Mal vorbelegt – der Coach erinnert sich.",
       },
+      {
+        icon: "award",
+        title: "Achievements & Belohnungspunkte",
+        text: "Neuer Achievements-Tab in der Bestenliste: viele faire Erfolge mit Fortschrittsanzeige, Filter und Sortierung. Freigeschaltete Belohnungspunkte zählen fair in den Bestenlisten-Score mit.",
+      },
+      {
+        icon: "user",
+        title: "Profil neu gestaltet",
+        text: "Übersichtlicheres, schöneres Profil mit sanften Animationen – und du kannst jetzt deinen Anzeigenamen ändern.",
+      },
     ],
     footer:
       "Viel Spaß beim Ausprobieren! Schau im Profil vorbei und trag Körpergewicht & Größe ein, damit der Ernährungs-Coach perfekt für dich rechnet.",

@@ -12,7 +12,7 @@ import {
   ShieldCheck,
   LogOut,
   Activity,
-  ChevronRight,
+  Award,
   Lightbulb,
   BookOpen,
 } from "lucide-react";
@@ -32,55 +32,82 @@ export default async function ProfilePage() {
   // Personalisierte Coach-Tipps aus dem gespeicherten Profil.
   const tips = sessionAdvice(p);
 
+  const links = [
+    {
+      href: "/analysis",
+      Icon: Activity,
+      title: "Coach-Analyse",
+      desc: "Score, Wochenvolumen, Bereitschaft & Prognose.",
+    },
+    {
+      href: "/leaderboard",
+      Icon: Award,
+      title: "Bestenliste & Achievements",
+      desc: "Dein Rang und freigeschaltete Erfolge.",
+    },
+    {
+      href: "/wissen",
+      Icon: BookOpen,
+      title: "Trainingswissen",
+      desc: "Volumen, Progression, Erholung, Ernährung & mehr.",
+    },
+  ];
+
   return (
     <div className="space-y-5">
       <PageHeader
         title="Coach & Profil"
-        subtitle="Damit der Coach realistische Gewichte und Wiederholungen für dich plant."
+        subtitle="Dein Profil, Coach-Einstellungen und mehr – alles an einem Ort."
       />
 
-      <Card className="flex items-start gap-3 border-primary/30 bg-primary/10">
-        <Sparkles className="mt-0.5 size-5 shrink-0 text-primary" />
-        <p className="text-sm text-muted">
-          Der Coach schätzt aus deinen Trainingsdaten dein Maximum je Übung und
-          empfiehlt im Workout live Gewicht und Wiederholungen. Er passt sich an,
-          wenn du mehr schaffst — und testet, wie weit du gehen kannst. Deine
-          Grenzen verschieben sich mit der Zeit von selbst.
-        </p>
-      </Card>
-
-      <Link
-        href="/analysis"
-        className="flex items-center gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-primary/40 hover:bg-primary/5"
-      >
-        <Activity className="size-5 shrink-0 text-primary" />
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold">Coach-Analyse ansehen</p>
-          <p className="text-sm text-muted">
-            Schonungslos ehrliche Auswertung deines Trainings — Konsistenz, Balance,
-            Kraftentwicklung und konkrete Prioritäten.
-          </p>
+      {/* Identität */}
+      {user && (
+        <div className="reveal">
+          <AvatarUploader
+            name={user.displayName ?? user.username}
+            username={user.username}
+            avatar={user.avatar}
+          />
         </div>
-        <ChevronRight className="size-5 shrink-0 text-muted" />
-      </Link>
+      )}
 
-      <Link
-        href="/wissen"
-        className="flex items-center gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-primary/40 hover:bg-primary/5"
-      >
-        <BookOpen className="size-5 shrink-0 text-primary" />
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold">Trainingswissen</p>
-          <p className="text-sm text-muted">
-            Die Wissensbasis des Coaches: Volumen, Wiederholungen, Pausen,
-            Progression, Erholung, Ernährung & mehr.
-          </p>
+      {/* Schnellzugriff */}
+      <section className="reveal space-y-2" style={{ animationDelay: "60ms" }}>
+        <h2 className="text-sm font-semibold text-muted">Mehr entdecken</h2>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {links.map((l) => (
+            <Link
+              key={l.href}
+              href={l.href}
+              className="group flex items-center gap-3 rounded-xl border border-border bg-surface p-4 transition-colors hover:border-primary/40 hover:bg-primary/5 sm:flex-col sm:items-start"
+            >
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 transition-transform group-hover:scale-105">
+                <l.Icon className="size-5 text-primary" />
+              </span>
+              <span className="min-w-0">
+                <span className="block font-semibold">{l.title}</span>
+                <span className="block text-xs text-muted">{l.desc}</span>
+              </span>
+            </Link>
+          ))}
         </div>
-        <ChevronRight className="size-5 shrink-0 text-muted" />
-      </Link>
+      </section>
+
+      {/* Coach-Einleitung */}
+      <div className="reveal" style={{ animationDelay: "120ms" }}>
+        <Card className="flex items-start gap-3 border-primary/30 bg-primary/10">
+          <Sparkles className="mt-0.5 size-5 shrink-0 text-primary" />
+          <p className="text-sm text-muted">
+            Der Coach schätzt aus deinen Trainingsdaten dein Maximum je Übung und
+            empfiehlt im Workout live Gewicht und Wiederholungen. Er passt sich an,
+            wenn du mehr schaffst — und testet, wie weit du gehen kannst.
+          </p>
+        </Card>
+      </div>
 
       {/* Personalisierte Coach-Tipps + Begriffs-Erklärung */}
       {tips.length > 0 && (
+        <div className="reveal" style={{ animationDelay: "160ms" }}>
         <Card className="space-y-3">
           <div className="flex items-center gap-2">
             <Lightbulb className="size-5 text-primary" />
@@ -102,16 +129,12 @@ export default async function ProfilePage() {
             steuert der Coach Last und Pausen spürbar genauer.
           </InfoBox>
         </Card>
+        </div>
       )}
 
-      {user && (
-        <AvatarUploader
-          name={user.displayName ?? user.username}
-          avatar={user.avatar}
-        />
-      )}
-
-      <CoachProfileForm profile={p} equipment={equipment} />
+      <div className="reveal" style={{ animationDelay: "200ms" }}>
+        <CoachProfileForm profile={p} equipment={equipment} />
+      </div>
 
       {/* Konto (v. a. für Mobil, wo die Sidebar fehlt) */}
       <Card className="space-y-3 md:hidden">

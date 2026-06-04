@@ -1,13 +1,15 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
-import { Camera, Loader2, Trash2, Check } from "lucide-react";
+import { Camera, Loader2, Trash2, Check, Pencil } from "lucide-react";
 import { Card } from "@/components/ui";
 import { Avatar } from "@/components/avatar";
 import {
   updateAvatar,
   removeAvatar,
+  updateDisplayName,
   type AvatarState,
+  type NameState,
 } from "@/lib/actions";
 
 const SIZE = 256; // Ziel-Kantenlänge (quadratisch)
@@ -42,13 +44,19 @@ function fileToSquareDataUrl(file: File): Promise<string> {
 
 export function AvatarUploader({
   name,
+  username,
   avatar,
 }: {
   name: string;
+  username: string;
   avatar: string | null;
 }) {
   const [state, action] = useActionState<AvatarState, FormData>(
     updateAvatar,
+    undefined,
+  );
+  const [nameState, nameAction] = useActionState<NameState, FormData>(
+    updateDisplayName,
     undefined,
   );
   const formRef = useRef<HTMLFormElement>(null);
@@ -77,8 +85,8 @@ export function AvatarUploader({
   const shown = preview ?? avatar;
 
   return (
-    <Card className="space-y-3">
-      <h2 className="font-semibold">Profilbild</h2>
+    <Card className="space-y-4">
+      <h2 className="font-semibold">Dein Profil</h2>
       <div className="flex items-center gap-4">
         <Avatar src={shown} name={name} className="size-20 text-2xl ring-2 ring-border" />
         <div className="min-w-0 flex-1 space-y-2">
@@ -123,6 +131,33 @@ export function AvatarUploader({
           </p>
         </div>
       </div>
+
+      {/* Anzeigename */}
+      <form action={nameAction} className="space-y-1.5">
+        <label className="flex items-center gap-1.5 text-sm font-medium">
+          <Pencil className="size-3.5 text-muted" /> Anzeigename
+        </label>
+        <div className="flex gap-2">
+          <input
+            name="displayName"
+            defaultValue={name}
+            maxLength={40}
+            placeholder="Dein Name"
+            className="min-h-10 flex-1 rounded-lg border border-border bg-surface-2 px-3 text-sm outline-none focus:border-primary"
+          />
+          <button
+            type="submit"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-surface-2 px-3 text-sm font-semibold text-foreground transition-colors hover:bg-border"
+          >
+            <Check className="size-4" /> Speichern
+          </button>
+        </div>
+        <p className="text-xs text-muted">
+          Login-Name bleibt <span className="font-medium text-foreground">{username}</span>.
+          {nameState?.ok && <span className="text-success"> · Gespeichert ✓</span>}
+          {nameState?.error && <span className="text-danger"> · {nameState.error}</span>}
+        </p>
+      </form>
 
       {state?.ok && (
         <div className="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm text-primary">
