@@ -101,6 +101,8 @@ model Program {
   level       String       @default("")
   location    String       @default("")
   daysPerWeek Int          @default(3)
+  // Trainingstage der Woche als CSV (ISO: 1=Mo … 7=So), z. B. "1,3,5".
+  weekdays    String       @default("")
   cursor      Int          @default(0) // Index des nächsten Tages
   cycles      Int          @default(0) // abgeschlossene Durchläufe
   active      Boolean      @default(true)

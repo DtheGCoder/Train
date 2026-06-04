@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import Link from "next/link";
-import { ChevronRight, Plus, Globe, Users, Download, Sparkles } from "lucide-react";
+import { ChevronRight, Plus, Globe, Users, Download } from "lucide-react";
 import { PageHeader, Card, Input, Button, EmptyState } from "@/components/ui";
 import { createRoutine, cloneRoutine } from "@/lib/actions";
 import { loadCoachProfile } from "@/lib/coach-data";
@@ -11,6 +11,7 @@ import {
   getProgram,
 } from "@/lib/program-data";
 import { RoutineCatalog, type CatalogItem } from "@/components/routine-catalog";
+import { PlansTabs } from "@/components/plans-tabs";
 import {
   CoachPlanSection,
   type ActiveProgram,
@@ -141,6 +142,24 @@ export default async function RoutinesPage() {
     } catch {
       coachLog = [];
     }
+    // Trainingstage (ISO 1=Mo … 7=So); Fallback aus der Häufigkeit für Alt-Daten.
+    const wdDefault: Record<number, number[]> = {
+      1: [1],
+      2: [1, 4],
+      3: [1, 3, 5],
+      4: [1, 2, 4, 5],
+      5: [1, 2, 3, 4, 5],
+      6: [1, 2, 3, 4, 5, 6],
+      7: [1, 2, 3, 4, 5, 6, 7],
+    };
+    const wdParsed = (activeRaw.weekdays || "")
+      .split(",")
+      .map((s) => parseInt(s, 10))
+      .filter((n) => n >= 1 && n <= 7);
+    const weekdays =
+      wdParsed.length > 0
+        ? wdParsed
+        : (wdDefault[activeRaw.daysPerWeek] ?? [1, 3, 5]);
     activeProgram = {
       id: activeRaw.id,
       name: activeRaw.name,
@@ -148,6 +167,7 @@ export default async function RoutinesPage() {
       goal: activeRaw.goal,
       level: activeRaw.level,
       daysPerWeek: activeRaw.daysPerWeek,
+      weekdays,
       cursor: activeRaw.cursor,
       cycles: activeRaw.cycles,
       schedule: seed?.schedule ?? "",
@@ -207,48 +227,25 @@ export default async function RoutinesPage() {
     author: r.user?.username ?? "unbekannt",
   }));
 
-  return (
+  const coachTab = (
+    <CoachPlanSection
+      activeProgram={activeProgram}
+      recommendations={recommendations}
+      gaps={gaps}
+    />
+  );
+
+  const templatesTab = (
     <div className="space-y-6">
-      <PageHeader
-        title="Trainingspläne"
-        subtitle="Coach-Pläne, Vorlagen & eigene Routinen für jedes Ziel"
-      />
-
-      <CoachPlanSection
-        activeProgram={activeProgram}
-        recommendations={recommendations}
-        gaps={gaps}
-      />
-
       <section className="space-y-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-muted">
-          <Sparkles className="size-4 text-primary" /> Vorlagen
-          <span className="font-normal">({presetItems.length})</span>
-        </h2>
+        <p className="text-sm text-muted">
+          Fertige, anerkannte Trainings für jedes Ziel – such und filtere nach
+          Ziel, Ort und Level.
+        </p>
         {presetItems.length === 0 ? (
           <p className="text-sm text-muted">Keine Vorlagen vorhanden.</p>
         ) : (
           <RoutineCatalog items={presetItems} />
-        )}
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-muted">Deine Pläne</h2>
-        <Card>
-          <form action={createRoutine} className="flex gap-2">
-            <Input name="name" placeholder="Neuer Plan, z.B. Push Day" required />
-            <Button type="submit">
-              <Plus className="size-4" /> Anlegen
-            </Button>
-          </form>
-        </Card>
-        {custom.length === 0 ? (
-          <EmptyState
-            title="Noch keine eigenen Pläne"
-            description="Lege oben einen Plan an oder speichere ein Workout aus dem Verlauf als Vorlage."
-          />
-        ) : (
-          <RoutineList routines={custom} />
         )}
       </section>
 
@@ -265,6 +262,42 @@ export default async function RoutinesPage() {
           <CommunityList routines={community} />
         )}
       </section>
+    </div>
+  );
+
+  const mineTab = (
+    <div className="space-y-3">
+      <Card>
+        <form action={createRoutine} className="flex gap-2">
+          <Input name="name" placeholder="Neuer Plan, z.B. Push Day" required />
+          <Button type="submit">
+            <Plus className="size-4" /> Anlegen
+          </Button>
+        </form>
+      </Card>
+      {custom.length === 0 ? (
+        <EmptyState
+          title="Noch keine eigenen Pläne"
+          description="Lege oben einen Plan an oder speichere ein Workout aus dem Verlauf als Vorlage."
+        />
+      ) : (
+        <RoutineList routines={custom} />
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="Trainingspläne"
+        subtitle="Dein Coach-Plan, Vorlagen & eigene Routinen"
+      />
+      <PlansTabs
+        coach={coachTab}
+        templates={templatesTab}
+        mine={mineTab}
+        mineCount={custom.length}
+      />
     </div>
   );
 }

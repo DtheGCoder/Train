@@ -1061,6 +1061,20 @@ export async function improveRoutine(
 
 /* ---------------- Coach-Programme (mehrtägige Pläne) ---------------- */
 
+// Standard-Trainingstage je Trainingshäufigkeit (ISO: 1=Mo … 7=So).
+function defaultWeekdays(daysPerWeek: number): number[] {
+  const map: Record<number, number[]> = {
+    1: [1],
+    2: [1, 4],
+    3: [1, 3, 5],
+    4: [1, 2, 4, 5],
+    5: [1, 2, 3, 4, 5],
+    6: [1, 2, 3, 4, 5, 6],
+    7: [1, 2, 3, 4, 5, 6, 7],
+  };
+  return map[Math.min(7, Math.max(1, daysPerWeek))] ?? [1, 3, 5];
+}
+
 const PROGRAM_COLORS = [
   "#6366f1",
   "#0ea5e9",
@@ -1111,6 +1125,7 @@ export async function activateProgram(
       level: seed.level,
       location: seed.location,
       daysPerWeek: seed.daysPerWeek,
+      weekdays: defaultWeekdays(seed.daysPerWeek).join(","),
     },
   });
 
@@ -1179,6 +1194,22 @@ export async function deactivateProgram(programId: string) {
   }
   revalidatePath("/routines");
   revalidatePath("/");
+}
+
+// Trainingstage der Woche eines Programms setzen (ISO 1=Mo … 7=So).
+export async function updateProgramWeekdays(
+  programId: string,
+  weekdays: number[],
+) {
+  const user = await requireUser();
+  const clean = [...new Set(weekdays.filter((d) => d >= 1 && d <= 7))].sort(
+    (a, b) => a - b,
+  );
+  await db.program.updateMany({
+    where: { id: programId, userId: user.id },
+    data: { weekdays: clean.join(",") },
+  });
+  revalidatePath("/routines");
 }
 
 // Nach einem Programm-Workout: Cursor auf den nächsten Tag setzen und die
