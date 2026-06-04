@@ -2,11 +2,12 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Timer, Dumbbell, TrendingUp, BookmarkPlus } from "lucide-react";
+import { ArrowLeft, Timer, Dumbbell, TrendingUp, BookmarkPlus, Award } from "lucide-react";
 import { Card, Button } from "@/components/ui";
 import { setTypeShort } from "@/lib/labels";
 import { formatDuration, epley1RM } from "@/lib/utils";
 import { saveWorkoutAsRoutine } from "@/lib/actions";
+import { ACHIEVEMENTS } from "@/lib/achievements";
 import { MuscleQualityMap, muscleQuality } from "@/components/muscle-map";
 import { MuscleGroupRadar, type RadarPoint } from "@/components/stats-muscle-radar";
 import { format } from "date-fns";
@@ -61,6 +62,18 @@ export default async function WorkoutDetail({
     (sum, e) => sum + e.sets.filter((s) => s.isCompleted).length,
     0,
   );
+
+  // Durch dieses Workout neu freigeschaltete Achievements.
+  let unlockedIds: string[] = [];
+  try {
+    const v = JSON.parse(workout.unlockedJson);
+    if (Array.isArray(v)) unlockedIds = v as string[];
+  } catch {
+    unlockedIds = [];
+  }
+  const unlocked = unlockedIds
+    .map((aid) => ACHIEVEMENTS.find((a) => a.id === aid))
+    .filter((a): a is (typeof ACHIEVEMENTS)[number] => !!a);
 
   // Trainierte Muskeln (Qualität rot/gelb/grün) + Radar dieses Workouts.
   const day = format(workout.startedAt, "yyyy-MM-dd");
@@ -118,6 +131,36 @@ export default async function WorkoutDetail({
           </Button>
         </form>
       </div>
+
+      {/* Durch dieses Workout neu freigeschaltete Achievements */}
+      {unlocked.length > 0 && (
+        <Card className="space-y-2 border-success/40 bg-success/5">
+          <div className="flex items-center gap-2">
+            <Award className="size-5 text-success" />
+            <h2 className="font-semibold text-success">
+              {unlocked.length === 1
+                ? "Neues Achievement freigeschaltet!"
+                : `${unlocked.length} neue Achievements freigeschaltet!`}
+            </h2>
+          </div>
+          <ul className="space-y-1.5">
+            {unlocked.map((a) => (
+              <li key={a.id} className="flex items-center gap-2 text-sm">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-success/15">
+                  <Award className="size-4 text-success" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium">{a.title}</span>
+                  <span className="text-muted"> · {a.desc}</span>
+                </span>
+                <span className="shrink-0 rounded-md bg-success/15 px-1.5 py-0.5 text-[11px] font-bold text-success">
+                  +{a.points}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         <Card className="text-center">

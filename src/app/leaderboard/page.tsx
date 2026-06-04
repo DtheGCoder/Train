@@ -4,6 +4,7 @@ import { PageHeader, EmptyState } from "@/components/ui";
 import { Leaderboard, type LeaderboardRow } from "@/components/leaderboard";
 import { LeaderboardTabs } from "@/components/leaderboard-tabs";
 import { AchievementsView, type AchRow } from "@/components/achievements-view";
+import { TitlesView, type TitleRow } from "@/components/titles-view";
 import {
   bestE1RM,
   analyzeExerciseHistory,
@@ -13,10 +14,13 @@ import {
 } from "@/lib/coach";
 import {
   statsFromWorkouts,
+  addNutrition,
   achievementPoints,
   evaluateAchievements,
   TOTAL_POINTS,
+  type Stats,
 } from "@/lib/achievements";
+import { evaluateTitles, titleById } from "@/lib/titles";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +28,15 @@ export default async function LeaderboardPage() {
   const me = await requireUser();
 
   // Kennzahlen über ALLE Accounts sammeln.
-  const [users, workouts] = await Promise.all([
+  const [users, workouts, nutriEntries, nutriDays] = await Promise.all([
     db.user.findMany({
-      select: { id: true, username: true, displayName: true, avatar: true },
+      select: {
+        id: true,
+        username: true,
+        displayName: true,
+        avatar: true,
+        settings: { select: { equippedTitle: true } },
+      },
     }),
     db.workout.findMany({
       where: { finishedAt: { not: null } },
@@ -52,7 +62,26 @@ export default async function LeaderboardPage() {
         },
       },
     }),
+    db.nutritionEntry.findMany({
+      select: { userId: true, date: true, protein: true },
+    }),
+    db.nutritionDay.findMany({ select: { userId: true, waterMl: true } }),
   ]);
+
+  // Ernährungsdaten je Nutzer bündeln (für Ernährungs-Achievements/Titel).
+  const nutriByUser = new Map<string, { date: string; protein: number }[]>();
+  for (const e of nutriEntries) {
+    (nutriByUser.get(e.userId) ?? nutriByUser.set(e.userId, []).get(e.userId)!).push({
+      date: e.date,
+      protein: e.protein,
+    });
+  }
+  const waterByUser = new Map<string, number[]>();
+  for (const d of nutriDays) {
+    (waterByUser.get(d.userId) ?? waterByUser.set(d.userId, []).get(d.userId)!).push(
+      d.waterMl,
+    );
+  }
 
   type Acc = {
     username: string;
@@ -132,6 +161,15 @@ export default async function LeaderboardPage() {
     }
   }
 
+  const equippedByUser = new Map(
+    users.map((u) => [u.id, u.settings?.equippedTitle ?? ""]),
+  );
+  const fullStats = (uid: string): Stats =>
+    addNutrition(statsFromWorkouts(byUser.get(uid) ?? []), {
+      entries: nutriByUser.get(uid) ?? [],
+      waterByDay: waterByUser.get(uid) ?? [],
+    });
+
   const rows: LeaderboardRow[] = [...acc.entries()].map(([userId, a]) => {
     // Trend je Übung laut Coach-Verlaufsanalyse zählen.
     const trend: TrendCounts = {
@@ -150,19 +188,33 @@ export default async function LeaderboardPage() {
       else if (status === "regressing") trend.regressing++;
     }
 
-    const achPts = achievementPoints(statsFromWorkouts(byUser.get(userId) ?? []));
+    const stats = fullStats(userId);
     const score = computeScore({
       workouts: a.workouts,
       volume: a.volume,
       best1rm: a.best1rm,
       trend,
-      achievementPoints: achPts,
+      achievementPoints: achievementPoints(stats),
     });
+
+    // Ausgerüsteter Titel (nur anzeigen, wenn freigeschaltet).
+    let title: { name: string; rarity: import("@/lib/titles").Rarity } | null = null;
+    const eqId = equippedByUser.get(userId);
+    if (eqId) {
+      const def = titleById(eqId);
+      if (def) {
+        const earnedCount = evaluateAchievements(stats).filter((x) => x.earned).length;
+        if (def.unlock({ stats, earnedCount })) {
+          title = { name: def.name, rarity: def.rarity };
+        }
+      }
+    }
 
     return {
       userId,
       username: a.username,
       avatar: a.avatar,
+      title,
       score: score.total,
       workouts: a.workouts,
       volume: a.volume,
@@ -182,9 +234,10 @@ export default async function LeaderboardPage() {
 
   const anyActivity = rows.some((r) => r.workouts > 0);
 
-  // Achievements des aktuellen Nutzers (serialisierbar fürs Client-Tab).
-  const myStats = statsFromWorkouts(byUser.get(me.id) ?? []);
-  const achRows: AchRow[] = evaluateAchievements(myStats).map((a) => ({
+  // Achievements & Titel des aktuellen Nutzers (serialisierbar fürs Client-Tab).
+  const myStats = fullStats(me.id);
+  const myEval = evaluateAchievements(myStats);
+  const achRows: AchRow[] = myEval.map((a) => ({
     id: a.def.id,
     category: a.def.category,
     title: a.def.title,
@@ -201,11 +254,25 @@ export default async function LeaderboardPage() {
     .filter((r) => r.earned)
     .reduce((s, r) => s + r.points, 0);
 
+  const myEarnedCount = myEval.filter((a) => a.earned).length;
+  const titleRows: TitleRow[] = evaluateTitles({
+    stats: myStats,
+    earnedCount: myEarnedCount,
+  }).map((t) => ({
+    id: t.title.id,
+    name: t.title.name,
+    rarity: t.title.rarity,
+    condition: t.title.condition,
+    hidden: !!t.title.hidden,
+    unlocked: t.unlocked,
+  }));
+  const myEquipped = equippedByUser.get(me.id) ?? "";
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="Bestenliste"
-        subtitle="Rangliste & Achievements – Konsistenz, Volumen, Coach & Belohnungen."
+        subtitle="Rangliste, Achievements & Titel – fair berechnet aus deinen Daten."
       />
 
       {!anyActivity ? (
@@ -223,6 +290,7 @@ export default async function LeaderboardPage() {
               totalPoints={TOTAL_POINTS}
             />
           }
+          titles={<TitlesView rows={titleRows} equipped={myEquipped} />}
         />
       )}
     </div>

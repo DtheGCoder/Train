@@ -160,6 +160,8 @@ model Workout {
   finishedAt  DateTime?
   notes       String            @default("")
   totalVolume Float             @default(0)
+  // Durch dieses Workout neu freigeschaltete Achievement-IDs (JSON-Array).
+  unlockedJson String           @default("[]")
   exercises   WorkoutExercise[]
 
   @@index([startedAt])
@@ -301,4 +303,8 @@ model Settings {
 
   // Gelesene Neuigkeiten (Postfach) als JSON-Array von News-IDs.
   readNewsJson        String @default("[]")
+  // Achievements: zuletzt freigeschaltete IDs (für „neu durch Workout").
+  achievementsJson    String @default("[]")
+  // Ausgerüsteter Titel (Achievement-/Titel-ID) – erscheint in der Bestenliste.
+  equippedTitle       String @default("")
 }

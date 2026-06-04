@@ -211,6 +211,82 @@ input[type="number"] {
   animation: riseIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* ---------- Titel-Badges nach Seltenheit (dauer-animiert) ---------- */
+.title-common {
+  color: var(--muted);
+}
+.title-uncommon {
+  color: #4ade80;
+}
+.title-rare {
+  background: linear-gradient(90deg, #38bdf8, #818cf8, #38bdf8);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: titleShimmer 4s linear infinite;
+}
+.title-epic {
+  background: linear-gradient(90deg, #a855f7, #e879f9, #a855f7);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: titleShimmer 3s linear infinite, titleGlow 1.8s ease-in-out infinite;
+}
+.title-legendary {
+  background: linear-gradient(90deg, #f59e0b, #fde047, #fb923c, #fde047, #f59e0b);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: titleShimmer 2.2s linear infinite, titleGlowGold 1.6s ease-in-out infinite;
+}
+.title-secret {
+  background: linear-gradient(90deg, #64748b, #e2e8f0, #334155, #e2e8f0, #64748b);
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: titleShimmer 2.6s linear infinite;
+}
+.title-funny {
+  display: inline-block;
+  color: #f472b6;
+  animation: titleWobble 1.5s ease-in-out infinite;
+  transform-origin: center;
+}
+
+@keyframes titleShimmer {
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes titleGlow {
+  0%, 100% {
+    filter: drop-shadow(0 0 2px rgba(168, 85, 247, 0.45));
+  }
+  50% {
+    filter: drop-shadow(0 0 9px rgba(232, 121, 249, 0.85));
+  }
+}
+@keyframes titleGlowGold {
+  0%, 100% {
+    filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.55));
+  }
+  50% {
+    filter: drop-shadow(0 0 11px rgba(253, 224, 71, 0.95));
+  }
+}
+@keyframes titleWobble {
+  0%, 100% {
+    transform: rotate(-2.5deg) scale(1);
+  }
+  50% {
+    transform: rotate(2.5deg) scale(1.04);
+  }
+}
+
 @keyframes confettiFall {
   0% {
     transform: translateY(-12px) rotate(0deg);
@@ -264,7 +340,12 @@ input[type="number"] {
   .finish-rise,
   .demo-a,
   .demo-b,
-  .reveal {
+  .reveal,
+  .title-rare,
+  .title-epic,
+  .title-legendary,
+  .title-secret,
+  .title-funny {
     animation: none;
   }
   /* Konfetti komplett weglassen, wenn Bewegung reduziert werden soll */

@@ -18,6 +18,13 @@ import { parseRoutineSets, type RoutineSet } from "@/lib/routine-sets";
 import { getProgram } from "@/lib/program-data";
 import { loadCoachProfile } from "@/lib/coach-data";
 import {
+  statsFromWorkouts,
+  addNutrition,
+  evaluateAchievements,
+  type Stats,
+} from "@/lib/achievements";
+import { titleById } from "@/lib/titles";
+import {
   decideExercise,
   decideDeload,
   DELOAD_FACTOR,
@@ -595,8 +602,18 @@ export async function finishWorkout(workoutId: string, name?: string) {
   // und die Tages-Routine wie ein echter Coach anpassen.
   await advanceProgramAfterWorkout(workout.routineId, user.id);
 
+  // Neu freigeschaltete Achievements ermitteln und am Workout vermerken.
+  const newlyUnlocked = await syncAchievements(user.id);
+  if (newlyUnlocked.length > 0) {
+    await db.workout.update({
+      where: { id: workoutId },
+      data: { unlockedJson: JSON.stringify(newlyUnlocked) },
+    });
+  }
+
   revalidatePath("/history");
   revalidatePath("/calendar");
+  revalidatePath("/leaderboard");
   revalidatePath("/");
   // Bewusst KEIN redirect: der Client zeigt erst die Abschluss-Übersicht
   // (inkl. Coach-Fazit) und navigiert selbst, wenn der Nutzer weiterklickt.
@@ -688,6 +705,10 @@ export async function deleteWorkout(workoutId: string) {
   for (const exerciseId of exerciseIds) {
     await recomputePRsForExercise(exerciseId, user.id);
   }
+
+  // Achievement-Stand neu berechnen – fällt man unter eine Schwelle, geht das
+  // Achievement (und davon abhängige Titel) wieder ab.
+  await syncAchievements(user.id);
 
   revalidatePath("/calendar");
   revalidatePath("/stats");
@@ -1835,4 +1856,97 @@ export async function markNewsRead(ids: string[]) {
   });
   revalidatePath("/");
   revalidatePath("/news");
+}
+
+/* ---------------- Achievements & Titel ---------------- */
+
+// Gesamt-Stats eines Nutzers (Workouts + Ernährung) für Achievements/Titel.
+async function userStatsFor(userId: string): Promise<Stats> {
+  const [workouts, entries, days] = await Promise.all([
+    db.workout.findMany({
+      where: { userId, finishedAt: { not: null } },
+      select: {
+        startedAt: true,
+        exercises: {
+          select: {
+            exerciseId: true,
+            exercise: { select: { primaryMuscle: { select: { slug: true } } } },
+            sets: {
+              select: { weight: true, reps: true, isCompleted: true, setType: true },
+            },
+          },
+        },
+      },
+    }),
+    db.nutritionEntry.findMany({
+      where: { userId },
+      select: { date: true, protein: true },
+    }),
+    db.nutritionDay.findMany({ where: { userId }, select: { waterMl: true } }),
+  ]);
+
+  const base = statsFromWorkouts(
+    workouts.map((w) => ({
+      startedAt: w.startedAt,
+      exercises: w.exercises.map((e) => ({
+        exerciseId: e.exerciseId,
+        muscleSlug: e.exercise.primaryMuscle.slug,
+        sets: e.sets.map((s) => ({
+          weight: s.weight,
+          reps: s.reps,
+          isCompleted: s.isCompleted,
+          setType: s.setType,
+        })),
+      })),
+    })),
+  );
+  return addNutrition(base, {
+    entries: entries.map((e) => ({ date: e.date, protein: e.protein })),
+    waterByDay: days.map((d) => d.waterMl),
+  });
+}
+
+function parseIds(json: string | null | undefined): string[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? (v as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Aktualisiert den gespeicherten Achievement-Stand und gibt die NEU
+// freigeschalteten IDs zurück (für „neu durch dieses Workout").
+async function syncAchievements(userId: string): Promise<string[]> {
+  const stats = await userStatsFor(userId);
+  const earnedNow = evaluateAchievements(stats)
+    .filter((a) => a.earned)
+    .map((a) => a.def.id);
+  const s = await ensureSettings(userId);
+  const before = new Set(parseIds(s.achievementsJson));
+  const newly = earnedNow.filter((id) => !before.has(id));
+  await db.settings.update({
+    where: { id: s.id },
+    data: { achievementsJson: JSON.stringify(earnedNow) },
+  });
+  return newly;
+}
+
+// Titel ausrüsten (nur wenn freigeschaltet) oder entfernen ("" / unbekannt).
+export async function equipTitle(id: string) {
+  const user = await requireUser();
+  let value = "";
+  if (id) {
+    const title = titleById(id);
+    if (title) {
+      const stats = await userStatsFor(user.id);
+      const earnedCount = evaluateAchievements(stats).filter((a) => a.earned).length;
+      if (title.unlock({ stats, earnedCount })) value = id;
+    }
+  }
+  const s = await ensureSettings(user.id);
+  await db.settings.update({ where: { id: s.id }, data: { equippedTitle: value } });
+  revalidatePath("/profile");
+  revalidatePath("/leaderboard");
 }

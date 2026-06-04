@@ -21,6 +21,9 @@ import {
   Award,
   Check,
   Lock,
+  Apple,
+  Beef,
+  Droplet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CATEGORY_LABEL, type AchCategory } from "@/lib/achievements";
@@ -56,6 +59,9 @@ const ICON: Record<string, typeof Play> = {
   sunrise: Sunrise,
   moon: Moon,
   star: Star,
+  apple: Apple,
+  beef: Beef,
+  droplet: Droplet,
 };
 
 const fmt = (n: number) =>

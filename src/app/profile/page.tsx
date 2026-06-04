@@ -7,6 +7,13 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { CoachProfileForm } from "@/components/coach-profile-form";
 import { AvatarUploader } from "@/components/avatar-uploader";
+import { TitlesView, type TitleRow } from "@/components/titles-view";
+import {
+  statsFromWorkouts,
+  addNutrition,
+  evaluateAchievements,
+} from "@/lib/achievements";
+import { evaluateTitles } from "@/lib/titles";
 import {
   Sparkles,
   ShieldCheck,
@@ -15,6 +22,7 @@ import {
   Award,
   Lightbulb,
   BookOpen,
+  BadgeCheck,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +36,53 @@ export default async function ProfilePage() {
       orderBy: { nameDe: "asc" },
     }),
   ]);
+
+  // Stats + freigeschaltete Titel des Nutzers (für die Titel-Auswahl).
+  let titleRows: TitleRow[] = [];
+  let equippedTitle = "";
+  if (user) {
+    const [workouts, entries, days, settings] = await Promise.all([
+      db.workout.findMany({
+        where: { userId: user.id, finishedAt: { not: null } },
+        select: {
+          startedAt: true,
+          exercises: {
+            select: {
+              exerciseId: true,
+              exercise: { select: { primaryMuscle: { select: { slug: true } } } },
+              sets: { select: { weight: true, reps: true, isCompleted: true, setType: true } },
+            },
+          },
+        },
+      }),
+      db.nutritionEntry.findMany({ where: { userId: user.id }, select: { date: true, protein: true } }),
+      db.nutritionDay.findMany({ where: { userId: user.id }, select: { waterMl: true } }),
+      db.settings.findUnique({ where: { userId: user.id }, select: { equippedTitle: true } }),
+    ]);
+    const stats = addNutrition(
+      statsFromWorkouts(
+        workouts.map((w) => ({
+          startedAt: w.startedAt,
+          exercises: w.exercises.map((e) => ({
+            exerciseId: e.exerciseId,
+            muscleSlug: e.exercise.primaryMuscle.slug,
+            sets: e.sets.map((s) => ({ weight: s.weight, reps: s.reps, isCompleted: s.isCompleted, setType: s.setType })),
+          })),
+        })),
+      ),
+      { entries: entries.map((e) => ({ date: e.date, protein: e.protein })), waterByDay: days.map((d) => d.waterMl) },
+    );
+    const earnedCount = evaluateAchievements(stats).filter((a) => a.earned).length;
+    titleRows = evaluateTitles({ stats, earnedCount }).map((tt) => ({
+      id: tt.title.id,
+      name: tt.title.name,
+      rarity: tt.title.rarity,
+      condition: tt.title.condition,
+      hidden: !!tt.title.hidden,
+      unlocked: tt.unlocked,
+    }));
+    equippedTitle = settings?.equippedTitle ?? "";
+  }
 
   // Personalisierte Coach-Tipps aus dem gespeicherten Profil.
   const tips = sessionAdvice(p);
@@ -68,6 +123,23 @@ export default async function ProfilePage() {
             username={user.username}
             avatar={user.avatar}
           />
+        </div>
+      )}
+
+      {/* Titel auswählen */}
+      {user && titleRows.length > 0 && (
+        <div className="reveal" style={{ animationDelay: "40ms" }}>
+          <Card className="space-y-3">
+            <div className="flex items-center gap-2">
+              <BadgeCheck className="size-5 text-primary" />
+              <h2 className="font-semibold">Titel</h2>
+            </div>
+            <p className="-mt-1 text-xs text-muted">
+              Rüste einen freigeschalteten Titel aus – er erscheint in der
+              Bestenliste unter deinem Namen.
+            </p>
+            <TitlesView rows={titleRows} equipped={equippedTitle} onlyUnlocked />
+          </Card>
         </div>
       )}
 

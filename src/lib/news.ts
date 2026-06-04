@@ -66,8 +66,8 @@ export const NEWS: NewsItem[] = [
       },
       {
         icon: "award",
-        title: "Achievements & Belohnungspunkte",
-        text: "Neuer Achievements-Tab in der Bestenliste: viele faire Erfolge mit Fortschrittsanzeige, Filter und Sortierung. Freigeschaltete Belohnungspunkte zählen fair in den Bestenlisten-Score mit.",
+        title: "Achievements, Titel & Belohnungspunkte",
+        text: "Über 50 Achievements (auch zur Ernährung!) mit Fortschritt, Filter & Sortierung – Belohnungspunkte zählen in die Bestenliste. Nach jedem Workout siehst du, was du neu freigeschaltet hast (löschst du es, passt sich alles wieder an). Ganz neu: 30 freischaltbare TITEL nach Seltenheit (von leicht bis legendär, dazu lustige und geheime), animiert und auswählbar im Profil oder im neuen Titel-Tab – dein Titel glänzt dann in der Bestenliste unter deinem Namen.",
       },
       {
         icon: "user",

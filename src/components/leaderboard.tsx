@@ -4,12 +4,15 @@ import { useState } from "react";
 import { Trophy, Crown, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Avatar } from "@/components/avatar";
+import { TitleBadge } from "@/components/title-badge";
 import type { ScoreLine } from "@/lib/coach";
+import type { Rarity } from "@/lib/titles";
 
 export type LeaderboardRow = {
   userId: string;
   username: string;
   avatar: string | null;
+  title: { name: string; rarity: Rarity } | null;
   score: number;
   workouts: number;
   volume: number;
@@ -71,6 +74,13 @@ export function Leaderboard({
                 {row.username}
                 {isMe && <span className="text-muted"> (du)</span>}
               </p>
+              {row.title && (
+                <TitleBadge
+                  name={row.title.name}
+                  rarity={row.title.rarity}
+                  className="max-w-full truncate text-[11px]"
+                />
+              )}
               <p className="text-xs font-bold tabular-nums text-primary">
                 {fmt(row.score)} Pkt
               </p>
@@ -133,6 +143,13 @@ export function Leaderboard({
                         <span className="ml-1 text-xs text-muted">(du)</span>
                       )}
                     </p>
+                    {r.title && (
+                      <TitleBadge
+                        name={r.title.name}
+                        rarity={r.title.rarity}
+                        className="block max-w-full truncate"
+                      />
+                    )}
                     <p className="truncate text-xs text-muted">
                       {r.workouts} Workouts · {fmt(r.volume)} kg · {fmt(r.sets)}{" "}
                       Sätze

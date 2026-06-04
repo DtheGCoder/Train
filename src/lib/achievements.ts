@@ -8,6 +8,7 @@ export type AchCategory =
   | "effort"
   | "strength"
   | "variety"
+  | "nutrition"
   | "special";
 
 export const CATEGORY_LABEL: Record<AchCategory, string> = {
@@ -16,6 +17,7 @@ export const CATEGORY_LABEL: Record<AchCategory, string> = {
   effort: "Fleiß",
   strength: "Stärke",
   variety: "Vielfalt",
+  nutrition: "Ernährung",
   special: "Besonderes",
 };
 
@@ -35,6 +37,36 @@ export type Stats = {
   lateWorkouts: number; // nach 21 Uhr begonnen
   weekendWorkouts: number;
   mainGroups: number; // verschiedene Hauptmuskelgruppen (max 6)
+  longWorkouts: number; // Einheiten mit >= 20 Arbeitssätzen
+  maxSetsWorkout: number; // meiste Arbeitssätze in einer Einheit
+  // Ernährung
+  loggedDays: number; // Tage mit Ernährungs-Einträgen
+  foodEntries: number; // Anzahl protokollierter Lebensmittel/Mahlzeiten
+  maxProteinDay: number; // höchstes an einem Tag protokolliertes Protein (g)
+  maxWaterMl: number; // höchste an einem Tag protokollierte Wassermenge (ml)
+};
+
+export const EMPTY_STATS: Stats = {
+  workouts: 0,
+  volume: 0,
+  sets: 0,
+  reps: 0,
+  days: 0,
+  streakDays: 0,
+  streakWeeks: 0,
+  exercises: 0,
+  best1rm: 0,
+  maxWorkoutVolume: 0,
+  earlyWorkouts: 0,
+  lateWorkouts: 0,
+  weekendWorkouts: 0,
+  mainGroups: 0,
+  longWorkouts: 0,
+  maxSetsWorkout: 0,
+  loggedDays: 0,
+  foodEntries: 0,
+  maxProteinDay: 0,
+  maxWaterMl: 0,
 };
 
 export type Achievement = {
@@ -96,11 +128,34 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "ex50", category: "variety", title: "Übungs-Sammler", desc: "50 verschiedene Übungen ausprobiert.", icon: "shuffle", points: 70, goal: 50, unit: "Übungen", value: (s) => s.exercises },
   { id: "allgroups", category: "variety", title: "Ganzkörper", desc: "Alle 6 Hauptmuskelgruppen trainiert.", icon: "layers", points: 40, goal: 6, unit: "Gruppen", value: (s) => s.mainGroups },
 
+  { id: "ex100", category: "variety", title: "Übungs-Enzyklopädie", desc: "100 verschiedene Übungen ausprobiert.", icon: "shuffle", points: 130, goal: 100, unit: "Übungen", value: (s) => s.exercises },
+  { id: "str220", category: "strength", title: "Rohe Gewalt", desc: "Geschätztes 1RM von 220 kg erreicht.", icon: "trending-up", points: 200, goal: 220, unit: "kg", value: (s) => s.best1rm },
+  { id: "vol1000", category: "volume", title: "Eine Million", desc: "1.000.000 kg Gesamtvolumen bewegt.", icon: "weight", points: 300, goal: 1000 * t, unit: "kg", value: (s) => s.volume },
+
+  // ---------- Fleiß (Umfang) ----------
+  { id: "long1", category: "effort", title: "Marathon-Einheit", desc: "Eine Einheit mit 20+ Arbeitssätzen.", icon: "list", points: 25, goal: 1, unit: "×", value: (s) => s.longWorkouts },
+  { id: "long10", category: "effort", title: "Volumen-Tier", desc: "10 Einheiten mit 20+ Arbeitssätzen.", icon: "list", points: 70, goal: 10, unit: "×", value: (s) => s.longWorkouts },
+  { id: "days365", category: "consistency", title: "Ein Jahr Eisen", desc: "An 365 verschiedenen Tagen trainiert.", icon: "crown", points: 300, goal: 365, unit: "Tage", value: (s) => s.days },
+  { id: "weeks26", category: "consistency", title: "Halbjahres-Streak", desc: "26 Wochen in Folge trainiert.", icon: "flame", points: 200, goal: 26, unit: "Wochen", value: (s) => s.streakWeeks },
+
   // ---------- Besonderes ----------
   { id: "early1", category: "special", title: "Frühaufsteher", desc: "Ein Workout vor 7 Uhr gestartet.", icon: "sunrise", points: 20, goal: 1, unit: "×", value: (s) => s.earlyWorkouts },
   { id: "early5", category: "special", title: "Morgenmensch", desc: "5 Workouts vor 7 Uhr gestartet.", icon: "sunrise", points: 45, goal: 5, unit: "×", value: (s) => s.earlyWorkouts },
   { id: "late1", category: "special", title: "Nachteule", desc: "Ein Workout nach 21 Uhr gestartet.", icon: "moon", points: 20, goal: 1, unit: "×", value: (s) => s.lateWorkouts },
+  { id: "late10", category: "special", title: "Mitternachts-Pumper", desc: "10 Workouts nach 21 Uhr gestartet.", icon: "moon", points: 45, goal: 10, unit: "×", value: (s) => s.lateWorkouts },
   { id: "weekend10", category: "special", title: "Wochenend-Krieger", desc: "10 Workouts am Wochenende.", icon: "star", points: 35, goal: 10, unit: "×", value: (s) => s.weekendWorkouts },
+  { id: "weekend30", category: "special", title: "Keine Pause kennt er", desc: "30 Workouts am Wochenende.", icon: "star", points: 80, goal: 30, unit: "×", value: (s) => s.weekendWorkouts },
+
+  // ---------- Ernährung ----------
+  { id: "nutri-first", category: "nutrition", title: "Mitgeschrieben", desc: "Erstes Lebensmittel protokolliert.", icon: "apple", points: 10, goal: 1, unit: "Einträge", value: (s) => s.foodEntries },
+  { id: "nutri100", category: "nutrition", title: "Tracking-Profi", desc: "100 Lebensmittel protokolliert.", icon: "apple", points: 45, goal: 100, unit: "Einträge", value: (s) => s.foodEntries },
+  { id: "nutri500", category: "nutrition", title: "Buchhalter des Tellers", desc: "500 Lebensmittel protokolliert.", icon: "apple", points: 110, goal: 500, unit: "Einträge", value: (s) => s.foodEntries },
+  { id: "nutriday7", category: "nutrition", title: "Tracking-Woche", desc: "An 7 Tagen Ernährung protokolliert.", icon: "calendar", points: 25, goal: 7, unit: "Tage", value: (s) => s.loggedDays },
+  { id: "nutriday30", category: "nutrition", title: "Tracking-Monat", desc: "An 30 Tagen Ernährung protokolliert.", icon: "calendar", points: 70, goal: 30, unit: "Tage", value: (s) => s.loggedDays },
+  { id: "protein150", category: "nutrition", title: "Protein-Tag", desc: "An einem Tag 150 g Protein protokolliert.", icon: "beef", points: 30, goal: 150, unit: "g", value: (s) => s.maxProteinDay },
+  { id: "protein200", category: "nutrition", title: "Eiweiß-Bestie", desc: "An einem Tag 200 g Protein protokolliert.", icon: "beef", points: 60, goal: 200, unit: "g", value: (s) => s.maxProteinDay },
+  { id: "water3l", category: "nutrition", title: "Gut hydriert", desc: "An einem Tag 3 Liter Wasser getrackt.", icon: "droplet", points: 20, goal: 3000, unit: "ml", value: (s) => s.maxWaterMl },
+  { id: "water4l", category: "nutrition", title: "Wasserfall", desc: "An einem Tag 4 Liter Wasser getrackt.", icon: "droplet", points: 40, goal: 4000, unit: "ml", value: (s) => s.maxWaterMl },
 ];
 
 export type AchProgress = {
@@ -183,6 +238,8 @@ export function statsFromWorkouts(workouts: WorkoutLite[]): Stats {
   let early = 0;
   let late = 0;
   let weekend = 0;
+  let longWorkouts = 0;
+  let maxSetsWorkout = 0;
   const dayMs = new Set<number>();
   const weekKeys = new Set<string>();
   const exIds = new Set<string>();
@@ -190,6 +247,7 @@ export function statsFromWorkouts(workouts: WorkoutLite[]): Stats {
 
   for (const w of workouts) {
     let wVol = 0;
+    let wSets = 0;
     const h = w.startedAt.getHours();
     if (h < 7) early++;
     if (h >= 21) late++;
@@ -209,6 +267,7 @@ export function statsFromWorkouts(workouts: WorkoutLite[]): Stats {
       for (const s of e.sets) {
         if (!s.isCompleted || s.setType === "warmup") continue;
         sets++;
+        wSets++;
         reps += s.reps;
         const v = s.weight * s.reps;
         volume += v;
@@ -218,6 +277,8 @@ export function statsFromWorkouts(workouts: WorkoutLite[]): Stats {
       }
     }
     if (wVol > maxWorkoutVolume) maxWorkoutVolume = wVol;
+    if (wSets > maxSetsWorkout) maxSetsWorkout = wSets;
+    if (wSets >= 20) longWorkouts++;
   }
 
   // Längste Serien.
@@ -258,5 +319,37 @@ export function statsFromWorkouts(workouts: WorkoutLite[]): Stats {
     lateWorkouts: late,
     weekendWorkouts: weekend,
     mainGroups: groups.size,
+    longWorkouts,
+    maxSetsWorkout,
+    loggedDays: 0,
+    foodEntries: 0,
+    maxProteinDay: 0,
+    maxWaterMl: 0,
+  };
+}
+
+/* ---------------- Ernährungs-Stats ---------------- */
+
+export type NutritionInput = {
+  // Pro protokolliertem Lebensmittel: Tag + Protein (für Tages-Maxima).
+  entries: { date: string; protein: number }[];
+  // Wasser je Tag (ml).
+  waterByDay: number[];
+};
+
+// Ernährungs-Kennzahlen in die Stats mergen (für Ernährungs-Achievements).
+export function addNutrition(stats: Stats, n: NutritionInput): Stats {
+  const days = new Set<string>();
+  const proteinByDay = new Map<string, number>();
+  for (const e of n.entries) {
+    days.add(e.date);
+    proteinByDay.set(e.date, (proteinByDay.get(e.date) ?? 0) + e.protein);
+  }
+  return {
+    ...stats,
+    loggedDays: days.size,
+    foodEntries: n.entries.length,
+    maxProteinDay: Math.max(0, ...proteinByDay.values(), 0),
+    maxWaterMl: Math.max(0, ...n.waterByDay, 0),
   };
 }
