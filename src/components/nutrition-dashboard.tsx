@@ -32,9 +32,11 @@ import {
 } from "@/lib/actions";
 import {
   FOODS,
+  FOOD_CATEGORIES,
   scaleFood,
   defaultQty,
   type Food,
+  type FoodCategory,
   type NutritionTargets,
   type PlanItem,
   type Macros,
@@ -407,6 +409,7 @@ function AddFoodSheet({
 }) {
   const [tab, setTab] = useState<"food" | "custom">("food");
   const [q, setQ] = useState("");
+  const [cat, setCat] = useState<FoodCategory | "all">("all");
   const [sel, setSel] = useState<Food | null>(null);
   const [qty, setQty] = useState<number>(100);
 
@@ -419,8 +422,12 @@ function AddFoodSheet({
 
   const list = useMemo(() => {
     const n = q.trim().toLowerCase();
-    return FOODS.filter((f) => !n || f.name.toLowerCase().includes(n));
-  }, [q]);
+    return FOODS.filter(
+      (f) =>
+        (cat === "all" || f.category === cat) &&
+        (!n || f.name.toLowerCase().includes(n)),
+    );
+  }, [q, cat]);
 
   const preview = sel ? scaleFood(sel, qty) : null;
 
@@ -455,15 +462,38 @@ function AddFoodSheet({
 
       {tab === "food" ? (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="px-4 pt-3">
+          <div className="space-y-2 px-4 pt-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Lebensmittel suchen…"
+                placeholder="Lebensmittel suchen (z. B. Big Mac, Reis, Quark)…"
                 className="w-full rounded-lg border border-border bg-surface-2 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary"
               />
+            </div>
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              <button
+                onClick={() => setCat("all")}
+                className={cn(
+                  "whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium",
+                  cat === "all" ? "border-primary bg-primary/15 text-primary" : "border-border bg-surface text-muted",
+                )}
+              >
+                Alle
+              </button>
+              {FOOD_CATEGORIES.map((c) => (
+                <button
+                  key={c}
+                  onClick={() => setCat(c)}
+                  className={cn(
+                    "whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium",
+                    cat === c ? "border-primary bg-primary/15 text-primary" : "border-border bg-surface text-muted",
+                  )}
+                >
+                  {c}
+                </button>
+              ))}
             </div>
           </div>
           <ul className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-4 py-3">

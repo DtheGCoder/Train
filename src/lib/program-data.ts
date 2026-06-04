@@ -454,6 +454,14 @@ export function recommendPrograms(p: CoachProfile): ProgramMatch[] {
     if (program.goal === p.goal) {
       score += 40;
       reasons.push("passt zu deinem Ziel");
+    } else if (p.goal === "fatloss" && program.goal === "endurance") {
+      // Beim Abnehmen sind Kondition/Stoffwechsel-Pläne ideal.
+      score += 38;
+      reasons.push("Kondition & Kalorienverbrauch fürs Abnehmen");
+    } else if (p.goal === "fatloss" && program.goal === "hypertrophy") {
+      // Krafttraining erhält die Muskeln in der Diät.
+      score += 20;
+      reasons.push("erhält Muskeln in der Diät");
     } else if (program.goal === "general") {
       score += 15;
     }

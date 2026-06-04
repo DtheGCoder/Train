@@ -4,7 +4,7 @@
 // Grundlage: geschätztes 1RM (Epley), Ziel-spezifische Wiederholungs-/
 // Intensitätsbereiche, Reps-in-Reserve und live nachgeführte Grenzen.
 
-export type Goal = "strength" | "hypertrophy" | "endurance";
+export type Goal = "strength" | "hypertrophy" | "endurance" | "fatloss";
 export type Experience = "beginner" | "intermediate" | "advanced";
 export type CoachStyle = "cautious" | "balanced" | "aggressive";
 
@@ -56,6 +56,8 @@ export const GOAL_CONFIG: Record<
   strength: { repLow: 3, repHigh: 6, label: "Kraft" },
   hypertrophy: { repLow: 8, repHigh: 12, label: "Muskelaufbau" },
   endurance: { repLow: 14, repHigh: 20, label: "Kraftausdauer" },
+  // Abnehmen: moderat-hohe Wdh, um in der Diät Muskeln zu erhalten.
+  fatloss: { repLow: 8, repHigh: 15, label: "Abnehmen" },
 };
 
 // repBias verschiebt das Ziel innerhalb des Bereichs, stepPct = Laststeigerung
@@ -74,6 +76,7 @@ export const GOAL_LABELS: Record<Goal, string> = {
   strength: "Kraft",
   hypertrophy: "Muskelaufbau",
   endurance: "Kraftausdauer",
+  fatloss: "Abnehmen",
 };
 export const EXPERIENCE_LABELS: Record<Experience, string> = {
   beginner: "Anfänger",
