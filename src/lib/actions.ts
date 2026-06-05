@@ -602,9 +602,12 @@ export async function finishWorkout(workoutId: string, name?: string) {
   // und die Tages-Routine wie ein echter Coach anpassen.
   await advanceProgramAfterWorkout(workout.routineId, user.id);
 
-  // Neu freigeschaltete Achievements + Titel ermitteln und am Workout vermerken.
-  const newlyUnlocked = await syncAchievements(user.id);
-  const newTitles = await syncTitles(user.id);
+  // Was hat GENAU dieses Workout neu freigeschaltet (Vorher/Nachher-Vergleich)?
+  const { achievements: newlyUnlocked, titles: newTitles } =
+    await newUnlocksForWorkout(user.id, workoutId);
+  // Snapshots aktuell halten (für späteres Löschen/Neuberechnen).
+  await syncAchievements(user.id);
+  await syncTitles(user.id);
   if (newlyUnlocked.length > 0 || newTitles.length > 0) {
     await db.workout.update({
       where: { id: workoutId },
@@ -1866,10 +1869,19 @@ export async function markNewsRead(ids: string[]) {
 /* ---------------- Achievements & Titel ---------------- */
 
 // Gesamt-Stats eines Nutzers (Workouts + Ernährung) für Achievements/Titel.
-async function userStatsFor(userId: string): Promise<Stats> {
+// Mit excludeWorkoutId lässt sich der Stand VOR einem bestimmten Workout
+// berechnen (für „was hat genau dieses Workout neu freigeschaltet").
+async function userStatsFor(
+  userId: string,
+  opts?: { excludeWorkoutId?: string },
+): Promise<Stats> {
   const [workouts, entries, days] = await Promise.all([
     db.workout.findMany({
-      where: { userId, finishedAt: { not: null } },
+      where: {
+        userId,
+        finishedAt: { not: null },
+        ...(opts?.excludeWorkoutId ? { id: { not: opts.excludeWorkoutId } } : {}),
+      },
       select: {
         startedAt: true,
         exercises: {
@@ -1909,6 +1921,39 @@ async function userStatsFor(userId: string): Promise<Stats> {
     entries: entries.map((e) => ({ date: e.date, protein: e.protein })),
     waterByDay: days.map((d) => d.waterMl),
   });
+}
+
+// Helfer: erreichte Achievement-/Titel-IDs für einen Stats-Stand.
+function earnedAchievementIds(s: Stats): string[] {
+  return evaluateAchievements(s)
+    .filter((a) => a.earned)
+    .map((a) => a.def.id);
+}
+function earnedTitleIds(s: Stats): string[] {
+  const earnedCount = earnedAchievementIds(s).length;
+  return evaluateTitles({ stats: s, earnedCount })
+    .filter((t) => t.unlocked)
+    .map((t) => t.title.id);
+}
+
+// Ermittelt, was GENAU dieses Workout neu freigeschaltet hat: Differenz aus dem
+// Stand NACH dem Workout und dem Stand DAVOR (ohne dieses Workout). Dadurch
+// unabhängig von gespeicherten Snapshots – es werden nie schon vorher erreichte
+// Erfolge erneut gemeldet, neue Nutzer sehen ihre echten Erst-Freischaltungen.
+async function newUnlocksForWorkout(
+  userId: string,
+  workoutId: string,
+): Promise<{ achievements: string[]; titles: string[] }> {
+  const [after, before] = await Promise.all([
+    userStatsFor(userId),
+    userStatsFor(userId, { excludeWorkoutId: workoutId }),
+  ]);
+  const beforeAch = new Set(earnedAchievementIds(before));
+  const beforeTitles = new Set(earnedTitleIds(before));
+  return {
+    achievements: earnedAchievementIds(after).filter((id) => !beforeAch.has(id)),
+    titles: earnedTitleIds(after).filter((id) => !beforeTitles.has(id)),
+  };
 }
 
 function parseIds(json: string | null | undefined): string[] {
