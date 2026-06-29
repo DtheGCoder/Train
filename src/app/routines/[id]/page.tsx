@@ -9,6 +9,7 @@ import { Card } from "@/components/ui";
 import { loadCoachProfile } from "@/lib/coach-data";
 import { reviewRoutine } from "@/lib/coach-knowledge";
 import { parseRoutineSets } from "@/lib/routine-sets";
+import { topLiftersByExercise, exerciseKey } from "@/lib/exercise-leaders";
 
 export const dynamic = "force-dynamic";
 
@@ -32,16 +33,18 @@ export default async function RoutineDetail({
   });
   if (!routine) notFound();
 
-  const [allExercises, muscles, equipment, profile] = await Promise.all([
-    db.exercise.findMany({
-      where: { userId: user.id },
-      include: { primaryMuscle: true, equipment: true },
-      orderBy: { nameDe: "asc" },
-    }),
-    db.muscleGroup.findMany({ orderBy: { nameDe: "asc" } }),
-    db.equipment.findMany({ orderBy: { nameDe: "asc" } }),
-    loadCoachProfile(),
-  ]);
+  const [allExercises, muscles, equipment, profile, topLifters] =
+    await Promise.all([
+      db.exercise.findMany({
+        where: { userId: user.id },
+        include: { primaryMuscle: true, equipment: true },
+        orderBy: { nameDe: "asc" },
+      }),
+      db.muscleGroup.findMany({ orderBy: { nameDe: "asc" } }),
+      db.equipment.findMany({ orderBy: { nameDe: "asc" } }),
+      loadCoachProfile(),
+      topLiftersByExercise(),
+    ]);
 
   // Coach prüft die Vorlage gegen die Wissensbasis (Struktur/Volumen/Wdh/Balance).
   const review = reviewRoutine(
@@ -72,6 +75,7 @@ export default async function RoutineDetail({
     category: e.category,
     isCustom: e.isCustom,
     instructions: e.instructions,
+    topLifters: topLifters[exerciseKey(e.nameEn)],
   }));
 
   return (

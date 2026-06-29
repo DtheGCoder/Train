@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { X, PlayCircle } from "lucide-react";
+import { X, PlayCircle, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui";
+import { Avatar } from "@/components/avatar";
 import { getExerciseDemo } from "@/lib/exercise-animation";
 import { ExerciseAnimation } from "@/components/exercise-animation";
 import { mechanicLabels, categoryLabels } from "@/lib/labels";
+import type { TopLifter } from "@/lib/exercise-leaders";
+import { cn } from "@/lib/utils";
 
 // Minimal-Datensatz, den die Vorschau braucht. ExerciseItem (Browser) erfüllt
 // das strukturell, daher kein Import nötig (vermeidet Zyklen).
@@ -18,7 +21,15 @@ export type PreviewExercise = {
   mechanic: string;
   category: string;
   instructions: string;
+  topLifters?: TopLifter[];
 };
+
+const PLACE = [
+  { ring: "ring-amber-400/80", text: "text-amber-400", medal: "🥇" },
+  { ring: "ring-slate-300/80", text: "text-slate-300", medal: "🥈" },
+  { ring: "ring-amber-700/80", text: "text-amber-700", medal: "🥉" },
+];
+const fmtKg = (n: number) => Math.round(n).toLocaleString("de-DE");
 
 // Wiederverwendbares Vollbild-Overlay: zeigt Bewegungs-Demo (Video), Badges und
 // Ausführung – ohne wegzunavigieren. Wird im Übungs-Browser, im Plan-Editor und
@@ -58,6 +69,47 @@ export function ExercisePreview({
           <Badge>{mechanicLabels[item.mechanic] ?? item.mechanic}</Badge>
           <Badge>{categoryLabels[item.category] ?? item.category}</Badge>
         </div>
+
+        {item.topLifters && item.topLifters.length > 0 && (
+          <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-3">
+            <p className="mb-2 flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-amber-400">
+              <Trophy className="size-3.5" /> Top 3 · meiste kg
+            </p>
+            <ul className="space-y-1.5">
+              {item.topLifters.map((l, i) => {
+                const p = PLACE[i] ?? PLACE[2];
+                const weighted = l.kg > 0;
+                return (
+                  <li
+                    key={i}
+                    className="lift-pop flex items-center gap-2.5"
+                    style={{ animationDelay: `${i * 80}ms` }}
+                  >
+                    <span className="w-5 shrink-0 text-center text-sm">
+                      {p.medal}
+                    </span>
+                    <Avatar
+                      src={l.avatar}
+                      name={l.name}
+                      className={cn(
+                        "size-7 text-[10px] ring-1 ring-offset-1 ring-offset-surface",
+                        p.ring,
+                      )}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {l.name}
+                    </span>
+                    <span
+                      className={cn("shrink-0 text-sm font-extrabold tabular-nums", p.text)}
+                    >
+                      {weighted ? `${fmtKg(l.kg)} kg` : `${l.reps} Wdh`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
 
         {demo ? (
           <ExerciseAnimation frames={demo.frames} />

@@ -6,6 +6,8 @@ import { Search, ChevronRight, PlayCircle, Info, Plus } from "lucide-react";
 import { Input, Select, Badge, EmptyState, Button } from "@/components/ui";
 import { hasExerciseDemo } from "@/lib/exercise-animation";
 import { ExercisePreview } from "@/components/exercise-preview";
+import { ExerciseTopLifters } from "@/components/exercise-top-lifters";
+import type { TopLifter } from "@/lib/exercise-leaders";
 import { cn } from "@/lib/utils";
 
 export type ExerciseItem = {
@@ -22,6 +24,8 @@ export type ExerciseItem = {
   trackingType?: string;
   isCustom: boolean;
   instructions: string;
+  // Top-3-Lifter (über alle Nutzer) für diese Übung – optional.
+  topLifters?: TopLifter[];
 };
 
 type Option = { slug: string; name: string };
@@ -116,6 +120,7 @@ export function ExerciseBrowser({
                     <Badge className="bg-success/15 text-success">Eigene</Badge>
                   )}
                 </div>
+                <ExerciseTopLifters lifters={it.topLifters} className="mt-1.5" />
               </div>
             );
 

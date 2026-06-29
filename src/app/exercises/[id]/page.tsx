@@ -2,9 +2,11 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Trash2, Trophy } from "lucide-react";
 import { Card, Badge, Button } from "@/components/ui";
 import { MuscleMap } from "@/components/muscle-map";
+import { ExerciseTopLifters } from "@/components/exercise-top-lifters";
+import { topLiftersByExercise, exerciseKey } from "@/lib/exercise-leaders";
 import { ExerciseAnimation } from "@/components/exercise-animation";
 import { getExerciseDemo } from "@/lib/exercise-animation";
 import { mechanicLabels, forceLabels, categoryLabels } from "@/lib/labels";
@@ -33,6 +35,7 @@ export default async function ExerciseDetail({
     where: { exerciseId: id, userId: user.id },
     orderBy: { value: "desc" },
   });
+  const topLifters = (await topLiftersByExercise())[exerciseKey(exercise.nameEn)];
   const best = (type: string) =>
     prs.filter((p) => p.recordType === type).sort((a, b) => b.value - a.value)[0]
       ?.value ?? null;
@@ -132,6 +135,15 @@ export default async function ExerciseDetail({
           )}
         </div>
       </Card>
+
+      {topLifters && topLifters.length > 0 && (
+        <Card>
+          <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold">
+            <Trophy className="size-4 text-amber-400" /> Top 3 · meiste kg
+          </h2>
+          <ExerciseTopLifters lifters={topLifters} />
+        </Card>
+      )}
 
       {exercise.instructions && (
         <Card>

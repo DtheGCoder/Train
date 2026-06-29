@@ -2,13 +2,14 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { PageHeader, LinkButton } from "@/components/ui";
 import { ExerciseBrowser } from "@/components/exercise-browser";
+import { topLiftersByExercise, exerciseKey } from "@/lib/exercise-leaders";
 import { Plus } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 export default async function ExercisesPage() {
   const user = await requireUser();
-  const [exercises, muscles, equipment] = await Promise.all([
+  const [exercises, muscles, equipment, topLifters] = await Promise.all([
     db.exercise.findMany({
       where: { userId: user.id },
       include: { primaryMuscle: true, equipment: true },
@@ -16,6 +17,7 @@ export default async function ExercisesPage() {
     }),
     db.muscleGroup.findMany({ orderBy: { nameDe: "asc" } }),
     db.equipment.findMany({ orderBy: { nameDe: "asc" } }),
+    topLiftersByExercise(),
   ]);
 
   const items = exercises.map((e) => ({
@@ -30,6 +32,7 @@ export default async function ExercisesPage() {
     category: e.category,
     isCustom: e.isCustom,
     instructions: e.instructions,
+    topLifters: topLifters[exerciseKey(e.nameEn)],
   }));
 
   return (

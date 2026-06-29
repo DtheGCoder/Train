@@ -326,6 +326,21 @@ input[type="number"] {
   animation: confettiFall linear both;
 }
 
+/* Top-3-Lifter-Chips: kompakt einschwebend (gestaffelt per inline-delay) */
+@keyframes liftPop {
+  0% {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+.lift-pop {
+  animation: liftPop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 /* Bewegungs-Demo: das untere Bild (Startpose) bleibt IMMER deckend sichtbar,
    nur die Endpose blendet darüber ein/aus → keine Lücke, kein Weiß-Blitz. */
 @keyframes demoFadeB {
@@ -353,6 +368,7 @@ input[type="number"] {
   .demo-a,
   .demo-b,
   .reveal,
+  .lift-pop,
   .title-rare,
   .title-epic,
   .title-legendary,

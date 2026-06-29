@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { notFound, redirect } from "next/navigation";
 import { WorkoutSession } from "@/components/workout-session";
+import { topLiftersByExercise, exerciseKey } from "@/lib/exercise-leaders";
 import { loadCoachProfile } from "@/lib/coach-data";
 import { e1rm, type ExerciseHistory } from "@/lib/coach";
 import {
@@ -95,7 +96,7 @@ export default async function WorkoutPage({
     if (sessions.length > 0) historyMap[exerciseId] = { sessions };
   }
 
-  const [allExercises, muscles, equipment] = await Promise.all([
+  const [allExercises, muscles, equipment, topLifters] = await Promise.all([
     db.exercise.findMany({
       where: { userId: user.id },
       include: { primaryMuscle: true, equipment: true },
@@ -103,6 +104,7 @@ export default async function WorkoutPage({
     }),
     db.muscleGroup.findMany({ orderBy: { nameDe: "asc" } }),
     db.equipment.findMany({ orderBy: { nameDe: "asc" } }),
+    topLiftersByExercise(),
   ]);
 
   // Coach: Profil + Basis-1RM je Übung (bestes geschätztes 1RM aus PRs).
@@ -193,6 +195,7 @@ export default async function WorkoutPage({
     trackingType: e.trackingType,
     isCustom: e.isCustom,
     instructions: e.instructions,
+    topLifters: topLifters[exerciseKey(e.nameEn)],
   }));
 
   const initial = {
